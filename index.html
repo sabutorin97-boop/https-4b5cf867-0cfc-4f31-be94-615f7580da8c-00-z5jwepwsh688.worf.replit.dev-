@@ -154,8 +154,26 @@
 
         <div class="hero-visual">
           <div class="hero-card glass shadow-glow">
-            <div class="window-art" role="img" aria-label="Схематичное изображение окна с четырьмя секциями">
-              <span></span><span></span><span></span><span></span>
+            <!-- Показываем работу поворотно-откидной фурнитуры: ручка вниз — закрыто,
+                 вбок — створка открывается, вверх — откидывается на проветривание. -->
+            <div class="window-demo" role="img"
+                 aria-label="Как работает поворотно-откидное окно: ручка вниз — створка закрыта, ручка вбок — створка открывается внутрь, ручка вверх — верх створки откидывается для проветривания">
+              <div class="window-frame">
+                <div class="sash-swing">
+                  <div class="sash-tilt">
+                    <div class="sash-active">
+                      <span class="handle"><i></i></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="window-modes" aria-hidden="true">
+                <span class="window-mode window-mode-1">Ручка вниз — окно закрыто</span>
+                <span class="window-mode window-mode-2">Ручка вбок — окно открывается</span>
+                <span class="window-mode window-mode-3">Ручка вверх — проветривание</span>
+                <span class="window-mode window-mode-still">Поворотно-откидная фурнитура</span>
+              </div>
             </div>
           </div>
         </div>
