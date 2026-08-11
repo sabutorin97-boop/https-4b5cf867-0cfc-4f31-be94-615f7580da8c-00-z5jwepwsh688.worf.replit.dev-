@@ -571,24 +571,64 @@ p {
   gap: 0.875rem;
 }
 
-/* Рама с проёмом: когда створка отходит, под ней видно тёмный откос */
-.window-frame {
-  aspect-ratio: 4 / 5;
-  width: 100%;
-  border-radius: var(--radius-lg);
-  background:
-    radial-gradient(120% 80% at 50% 0%, oklch(0.32 0.04 270), oklch(0.19 0.025 270));
-  border: 1px solid oklch(1 0 0 / 0.14);
-  box-shadow: 0 20px 40px -24px oklch(0 0 0 / 0.8) inset;
-  padding: 0.875rem;
-  perspective: 1100px;
-  /* Открытая створка не должна вылезать за раму и наезжать на подпись */
-  overflow: hidden;
+/* Палитра окна: белый профиль ПВХ, металл фурнитуры, тёмный откос */
+.window-scene {
+  --profile-light: oklch(0.95 0.004 250);
+  --profile-mid: oklch(0.88 0.006 250);
+  --profile-dark: oklch(0.76 0.008 250);
+  --metal-light: oklch(0.86 0.008 250);
+  --metal-dark: oklch(0.62 0.012 250);
+  --reveal: oklch(0.17 0.02 270);
+
+  position: relative;
+  /* Слева оставлен запас: створка открывается внутрь комнаты, к зрителю */
+  padding: 0.5rem 0.5rem 0 22%;
+  perspective: 1400px;
+  perspective-origin: 65% 50%;
 }
+
+/* Коробка окна — внешний профиль рамы */
+.window-box {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  width: 100%;
+  border-radius: 0.375rem;
+  padding: 0.75rem;
+  background: linear-gradient(145deg, var(--profile-light), var(--profile-dark));
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 0.5) inset,
+    0 24px 48px -20px oklch(0 0 0 / 0.85);
+  /* Намеренно без preserve-3d: иначе повёрнутая створка уходит по глубине
+     за плоскость проёма и просто исчезает. Порядок в разметке держит её сверху. */
+}
+
+/* Проём: то, что видно, когда створка отходит */
+.window-reveal {
+  position: absolute;
+  inset: 0.75rem;
+  border-radius: 0.1875rem;
+  background: linear-gradient(180deg, var(--reveal), oklch(0.22 0.025 270));
+  box-shadow: 0 0 28px oklch(0 0 0 / 0.9) inset;
+}
+
+/* Петли на правой стойке рамы */
+.hinge {
+  position: absolute;
+  right: 0.25rem;
+  width: 0.5rem;
+  height: 1.25rem;
+  border-radius: 0.1875rem;
+  background: linear-gradient(180deg, var(--metal-light), var(--metal-dark));
+  box-shadow: 0 1px 3px oklch(0 0 0 / 0.6);
+}
+
+.hinge-top { top: 16%; }
+.hinge-bottom { bottom: 16%; }
 
 /* Внешняя обёртка отвечает за поворот вокруг петель справа */
 .sash-swing {
-  height: 100%;
+  position: absolute;
+  inset: 0.75rem;
   transform-origin: right center;
   transform-style: preserve-3d;
   animation: sash-swing 14s cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -602,59 +642,84 @@ p {
   animation: sash-tilt 14s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* Сама створка: рамка профиля со стеклом внутри */
-.sash-active {
+/* Створка: профиль по контуру, внутри стеклопакет */
+.sash {
   position: relative;
   height: 100%;
-  border-radius: 0.5rem;
-  border: 2px solid oklch(0.88 0.01 270 / 0.55);
-  background:
-    linear-gradient(150deg, oklch(0.72 0.16 245 / 0.4), oklch(0.72 0.18 305 / 0.3)),
-    oklch(0.4 0.04 270);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  background: linear-gradient(145deg, var(--profile-light), var(--profile-mid));
   box-shadow:
-    0 1px 0 oklch(1 0 0 / 0.25) inset,
-    0 24px 48px -20px oklch(0 0 0 / 0.75);
+    0 1px 0 oklch(1 0 0 / 0.55) inset,
+    0 18px 36px -14px oklch(0 0 0 / 0.8);
 }
 
-/* Блик на стекле, чтобы поверхность читалась как стеклянная */
-.sash-active::after {
+/* Имя намеренно не .glass — этот класс уже занят стеклянными карточками сайта */
+.sash-glass {
+  position: relative;
+  height: 100%;
+  border-radius: 0.125rem;
+  overflow: hidden;
+  background:
+    linear-gradient(170deg, oklch(0.62 0.07 235 / 0.85), oklch(0.45 0.06 275 / 0.9)),
+    oklch(0.3 0.04 265);
+  box-shadow:
+    0 0 0 1px oklch(0.7 0.01 250 / 0.5) inset,
+    0 10px 30px -12px oklch(0 0 0 / 0.7) inset;
+}
+
+/* Отражение на стекле */
+.sash-glass::after {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: 0.375rem;
-  background: linear-gradient(115deg, oklch(1 0 0 / 0.16) 0 32%, transparent 52%);
-  pointer-events: none;
+  inset: -20%;
+  background: linear-gradient(115deg,
+    oklch(1 0 0 / 0.22) 0 26%,
+    oklch(1 0 0 / 0.05) 26% 34%,
+    transparent 34% 100%);
 }
 
 /* Ручка: розетка и рычаг, который поворачивается вокруг неё */
 .handle {
   position: absolute;
-  left: 0.625rem;
+  left: -0.125rem;
   top: 50%;
-  width: 0.75rem;
-  height: 0.75rem;
-  margin-top: -0.375rem;
-  border-radius: 999px;
-  background: oklch(0.85 0.02 270);
-  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.7);
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-top: -0.4375rem;
+  border-radius: 0.25rem;
+  background: linear-gradient(145deg, var(--metal-light), var(--metal-dark));
+  box-shadow: 0 2px 5px -1px oklch(0 0 0 / 0.7);
 }
 
 .handle i {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 0.3125rem;
-  height: 1.5rem;
-  margin-left: -0.15625rem;
+  width: 0.375rem;
+  height: 1.625rem;
+  margin-left: -0.1875rem;
+  margin-top: -0.1875rem;
   border-radius: 999px;
-  background: linear-gradient(180deg, oklch(0.88 0.02 270), oklch(0.7 0.02 270));
-  transform-origin: 50% 0;
+  background: linear-gradient(180deg, var(--metal-light), var(--metal-dark));
+  box-shadow: 0 2px 6px -2px oklch(0 0 0 / 0.75);
+  transform-origin: 50% 0.1875rem;
   animation: handle-turn 14s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+/* Подоконник — выступает за раму по бокам */
+.window-sill {
+  height: 0.5rem;
+  margin: -0.125rem -0.75rem 0 -0.75rem;
+  border-radius: 0 0 0.25rem 0.25rem;
+  background: linear-gradient(180deg, var(--profile-light), var(--profile-dark));
+  box-shadow: 0 10px 20px -10px oklch(0 0 0 / 0.85);
+}
+
+/* Отрицательный угол — створка идёт к зрителю, то есть внутрь комнаты */
 @keyframes sash-swing {
   0%, 16% { transform: rotateY(0deg); }
-  26%, 36% { transform: rotateY(52deg); }
+  26%, 36% { transform: rotateY(-38deg); }
   44%, 100% { transform: rotateY(0deg); }
 }
 

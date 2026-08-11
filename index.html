@@ -158,14 +158,22 @@
                  вбок — створка открывается, вверх — откидывается на проветривание. -->
             <div class="window-demo" role="img"
                  aria-label="Как работает поворотно-откидное окно: ручка вниз — створка закрыта, ручка вбок — створка открывается внутрь, ручка вверх — верх створки откидывается для проветривания">
-              <div class="window-frame">
-                <div class="sash-swing">
-                  <div class="sash-tilt">
-                    <div class="sash-active">
-                      <span class="handle"><i></i></span>
+              <div class="window-scene">
+                <div class="window-box">
+                  <div class="window-reveal"></div>
+                  <span class="hinge hinge-top"></span>
+                  <span class="hinge hinge-bottom"></span>
+
+                  <div class="sash-swing">
+                    <div class="sash-tilt">
+                      <div class="sash">
+                        <div class="sash-glass"></div>
+                        <span class="handle"><i></i></span>
+                      </div>
                     </div>
                   </div>
                 </div>
+                <div class="window-sill"></div>
               </div>
 
               <div class="window-modes" aria-hidden="true">
