@@ -1,0 +1,1343 @@
+/* ==========================================================================
+   Окна Профигрупп — лендинг-квиз
+   Дизайн-система перенесена с сайта-образца ai-profigrup-studia:
+   тёмная тема, сине-фиолетовый градиент, стеклянные карточки, сетка на фоне.
+   ========================================================================== */
+
+/* --- Токены ------------------------------------------------------------- */
+
+:root {
+  --radius: 1rem;
+  --radius-sm: 0.75rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+
+  --background: oklch(0.16 0.02 270);
+  --foreground: oklch(0.98 0.005 270);
+  --card: oklch(0.21 0.025 270);
+  --card-foreground: oklch(0.98 0.005 270);
+  --primary: oklch(0.7 0.18 280);
+  --primary-foreground: oklch(0.16 0.02 270);
+  --secondary: oklch(0.26 0.03 270);
+  --muted: oklch(0.24 0.025 270);
+  --muted-foreground: oklch(0.7 0.02 270);
+  --border: oklch(0.3 0.025 270 / 60%);
+  --input: oklch(0.26 0.025 270);
+  --ring: oklch(0.7 0.18 280);
+  --success: oklch(0.75 0.18 155);
+  --destructive: oklch(0.65 0.22 25);
+
+  --gradient-start: oklch(0.72 0.16 245);
+  --gradient-end: oklch(0.72 0.18 305);
+
+  --container: 1200px;
+  --header-h: 4.5rem;
+}
+
+/* --- База --------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--header-h) + 1rem);
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "Inter", system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11", "kern";
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100dvh;
+  line-height: 1.6;
+  background-image:
+    radial-gradient(at 15% 10%, oklch(0.72 0.16 245 / 0.14) 0, transparent 55%),
+    radial-gradient(at 85% 0%, oklch(0.72 0.18 305 / 0.14) 0, transparent 55%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+h1 {
+  letter-spacing: -0.035em;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: oklch(0.72 0.18 285 / 0.35);
+}
+
+/* --- Утилиты, перенесённые из образца ----------------------------------- */
+
+.container {
+  width: 100%;
+  max-width: var(--container);
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding-inline: 1.5rem;
+  }
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-gradient-brand {
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(oklch(1 0 0 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(1 0 0 / 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+  mask-image: radial-gradient(ellipse at center, black 40%, transparent 80%);
+}
+
+.glass {
+  background: oklch(0.21 0.025 270 / 0.55);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid oklch(1 0 0 / 0.08);
+}
+
+.shadow-glow {
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 0.08) inset,
+    0 20px 60px -20px oklch(0.72 0.18 285 / 0.45);
+}
+
+.link-underline {
+  position: relative;
+}
+
+.link-underline::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
+  transform: scaleX(0);
+  transform-origin: right center;
+  transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.link-underline:hover::after {
+  transform: scaleX(1);
+  transform-origin: left center;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Кнопки ------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  transition: opacity 0.2s, background-color 0.2s, border-color 0.2s, transform 0.2s;
+  text-align: center;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+  color: var(--primary-foreground);
+  box-shadow:
+    0 1px 0 oklch(1 0 0 / 0.08) inset,
+    0 20px 60px -20px oklch(0.72 0.18 285 / 0.45);
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.btn-outline {
+  border-color: var(--border);
+  background: oklch(0.26 0.03 270 / 0.4);
+  color: var(--foreground);
+}
+
+.btn-outline:hover:not(:disabled) {
+  background: var(--secondary);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--muted-foreground);
+  padding-inline: 1rem;
+}
+
+.btn-ghost:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+.btn-lg {
+  padding: 0.9375rem 1.75rem;
+  font-size: 1rem;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-icon {
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+/* --- Чипы --------------------------------------------------------------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  background: oklch(0.21 0.025 270 / 0.55);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid oklch(1 0 0 / 0.08);
+}
+
+.chip-live {
+  color: var(--foreground);
+}
+
+/* Пульсирующая точка — аналог animate-ping из образца */
+.pulse-dot {
+  position: relative;
+  display: inline-flex;
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+}
+
+.pulse-dot::before,
+.pulse-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+.pulse-dot::before {
+  opacity: 0.6;
+  animation: ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes ping {
+  75%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* --- Секции ------------------------------------------------------------- */
+
+.section {
+  padding-block: 4rem;
+}
+
+@media (min-width: 768px) {
+  .section {
+    padding-block: 5.5rem;
+  }
+}
+
+.section-head {
+  max-width: 42rem;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.section-head h2 {
+  margin-top: 1rem;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+}
+
+.section-head p {
+  margin-top: 1rem;
+  color: var(--muted-foreground);
+  font-size: 1.0625rem;
+}
+
+.eyebrow {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  background: oklch(0.21 0.025 270 / 0.55);
+  border: 1px solid oklch(1 0 0 / 0.08);
+}
+
+/* --- Шапка -------------------------------------------------------------- */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: oklch(0.16 0.02 270 / 0.72);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border-bottom: 1px solid var(--border);
+}
+
+.site-header .container {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  min-height: var(--header-h);
+}
+
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.02em;
+  flex: none;
+}
+
+.logo-mark {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.625rem;
+  display: grid;
+  place-items: center;
+  color: var(--primary-foreground);
+}
+
+.logo-mark svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.site-nav {
+  display: none;
+  gap: 1.5rem;
+  margin-left: auto;
+  font-size: 0.9375rem;
+  color: var(--muted-foreground);
+}
+
+.site-nav a:hover {
+  color: var(--foreground);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.header-phone {
+  display: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Навигация появляется только когда шапке реально хватает места:
+   логотип + четыре ссылки + телефон + кнопка требуют широкого экрана. */
+@media (min-width: 1024px) {
+  .site-nav {
+    display: flex;
+  }
+}
+
+@media (min-width: 1180px) {
+  .header-phone {
+    display: inline-block;
+  }
+}
+
+.header-cta {
+  display: none;
+}
+
+@media (min-width: 600px) {
+  .header-cta {
+    display: inline-flex;
+  }
+}
+
+/* --- Первый экран ------------------------------------------------------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-grid-bg {
+  position: absolute;
+  inset: 0;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.hero .container {
+  position: relative;
+  padding-top: 2.5rem;
+  padding-bottom: 3.5rem;
+}
+
+.hero-layout {
+  display: grid;
+  align-items: center;
+  gap: 2.5rem;
+}
+
+@media (min-width: 1024px) {
+  .hero .container {
+    padding-top: 3.5rem;
+    padding-bottom: 4rem;
+  }
+
+  .hero-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 3rem;
+  }
+}
+
+.hero h1 {
+  margin-top: 1.5rem;
+  max-width: 15ch;
+  font-size: clamp(2rem, 4.4vw, 3.375rem);
+  line-height: 1.06;
+}
+
+.hero-sub {
+  margin-top: 1.25rem;
+  max-width: 34rem;
+  color: var(--muted-foreground);
+  font-size: 1.0625rem;
+}
+
+@media (min-width: 768px) {
+  .hero-sub {
+    font-size: 1.125rem;
+  }
+}
+
+.hero-chips {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hero-actions {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.hero-actions .btn {
+  flex: 1 1 100%;
+}
+
+@media (min-width: 480px) {
+  .hero-actions .btn {
+    flex: 0 1 auto;
+  }
+}
+
+.hero-note {
+  margin-top: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+/* Визуальная карточка справа */
+.hero-visual {
+  position: relative;
+  max-width: 28rem;
+  margin-inline: auto;
+  width: 100%;
+}
+
+.hero-card {
+  position: relative;
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  overflow: hidden;
+}
+
+.window-art {
+  aspect-ratio: 4 / 5;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(160deg, oklch(0.72 0.16 245 / 0.28), oklch(0.72 0.18 305 / 0.22)),
+    oklch(0.26 0.03 270);
+  border: 1px solid oklch(1 0 0 / 0.1);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 1.4fr 1fr;
+  gap: 0.5rem;
+  padding: 0.5rem;
+}
+
+.window-art span {
+  border-radius: 0.5rem;
+  background: linear-gradient(150deg, oklch(1 0 0 / 0.14), oklch(1 0 0 / 0.03));
+  border: 1px solid oklch(1 0 0 / 0.12);
+  box-shadow: 0 8px 24px -12px oklch(0 0 0 / 0.6) inset;
+}
+
+.hero-badge {
+  position: absolute;
+  border-radius: var(--radius);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.75rem;
+  line-height: 1.3;
+}
+
+.hero-badge span {
+  display: block;
+  color: var(--muted-foreground);
+}
+
+.hero-badge strong {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--foreground);
+}
+
+.hero-badge-tl {
+  top: 2.25rem;
+  left: 2.25rem;
+}
+
+.hero-badge-br {
+  bottom: 2.25rem;
+  right: 2.25rem;
+}
+
+/* --- Полоса цифр -------------------------------------------------------- */
+
+.stats {
+  border-block: 1px solid var(--border);
+  background: oklch(0.21 0.025 270 / 0.35);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem 1rem;
+  padding-block: 2.5rem;
+  text-align: center;
+}
+
+@media (min-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.stat-value {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.stat-label {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+/* --- Квиз --------------------------------------------------------------- */
+
+.quiz-shell {
+  margin-top: 3rem;
+  max-width: 44rem;
+  margin-inline: auto;
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .quiz-shell {
+    padding: 2.5rem;
+  }
+}
+
+.quiz-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  margin-bottom: 0.75rem;
+}
+
+.progress {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: var(--secondary);
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--gradient-start), var(--gradient-end));
+  transition: width 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.quiz-question {
+  margin-top: 2rem;
+  font-size: clamp(1.25rem, 3vw, 1.625rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* На заголовки фокус ставится программно — только чтобы экранный диктор
+   прочитал новый шаг. Рамка вокруг них выглядела бы ошибкой. */
+.quiz-question:focus,
+.quiz-question:focus-visible,
+.result-head h3:focus,
+.result-head h3:focus-visible,
+.sent-state h3:focus,
+.sent-state h3:focus-visible {
+  outline: none;
+}
+
+.quiz-hint {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.quiz-options {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  width: 100%;
+  text-align: left;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: oklch(0.26 0.03 270 / 0.4);
+  color: var(--foreground);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s, transform 0.2s;
+}
+
+.quiz-option:hover {
+  border-color: oklch(0.7 0.18 280 / 0.6);
+  background: var(--secondary);
+}
+
+.quiz-option[aria-pressed="true"] {
+  border-color: oklch(0.7 0.18 280 / 0.85);
+  background: oklch(0.7 0.18 280 / 0.14);
+}
+
+.quiz-option-tick {
+  flex: none;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  color: transparent;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.quiz-option-tick svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.quiz-option[aria-pressed="true"] .quiz-option-tick {
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+  border-color: transparent;
+  color: var(--primary-foreground);
+}
+
+.quiz-footer {
+  margin-top: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* Результат подбора */
+.result-head {
+  text-align: center;
+}
+
+.result-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  margin-inline: auto;
+  display: grid;
+  place-items: center;
+  color: var(--primary-foreground);
+}
+
+.result-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.result-head h3 {
+  margin-top: 1rem;
+  font-size: clamp(1.375rem, 3vw, 1.75rem);
+}
+
+.result-head p {
+  margin-top: 0.5rem;
+  color: var(--muted-foreground);
+}
+
+.spec-list {
+  margin-top: 1.75rem;
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  padding: 0;
+}
+
+.spec-item {
+  display: flex;
+  gap: 0.875rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: oklch(0.26 0.03 270 / 0.35);
+}
+
+.spec-item-icon {
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  background: oklch(0.7 0.18 280 / 0.16);
+  color: oklch(0.82 0.12 285);
+}
+
+.spec-item-icon svg {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.spec-item-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+
+.spec-item-value {
+  margin-top: 0.125rem;
+  font-weight: 600;
+}
+
+.spec-item-note {
+  margin-top: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.result-why {
+  margin-top: 1.5rem;
+  padding: 1.125rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid oklch(0.7 0.18 280 / 0.3);
+  background: oklch(0.7 0.18 280 / 0.08);
+  font-size: 0.9375rem;
+}
+
+.result-why strong {
+  display: block;
+  margin-bottom: 0.375rem;
+}
+
+.answers-recap {
+  margin-top: 1.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.answers-recap .chip {
+  background: var(--secondary);
+  border-color: transparent;
+  font-size: 0.75rem;
+}
+
+/* --- Форма -------------------------------------------------------------- */
+
+.lead-form {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 1rem;
+}
+
+.field {
+  display: grid;
+  gap: 0.4375rem;
+}
+
+.field label {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 0.8125rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: oklch(0.16 0.02 270 / 0.6);
+  color: var(--foreground);
+  transition: border-color 0.2s;
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: oklch(0.55 0.02 270);
+}
+
+.field input:hover,
+.field select:hover,
+.field textarea:hover {
+  border-color: oklch(0.7 0.18 280 / 0.5);
+}
+
+.field-error {
+  font-size: 0.8125rem;
+  color: var(--destructive);
+  min-height: 0;
+}
+
+.field[data-invalid="true"] input,
+.field[data-invalid="true"] select {
+  border-color: var(--destructive);
+}
+
+.field-row {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 560px) {
+  .field-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* Ловушка для ботов — скрыта от людей, но не от автозаполнения роботов */
+.hp-field {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.consent {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.consent input {
+  margin-top: 0.1875rem;
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  accent-color: oklch(0.7 0.18 280);
+}
+
+.consent a {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.form-status {
+  font-size: 0.875rem;
+  min-height: 1.25rem;
+}
+
+.form-status[data-tone="error"] {
+  color: var(--destructive);
+}
+
+.form-status[data-tone="success"] {
+  color: var(--success);
+}
+
+/* Экран «заявка отправлена» */
+.sent-state {
+  text-align: center;
+  padding-block: 1rem;
+}
+
+.sent-state .result-icon {
+  background: oklch(0.75 0.18 155 / 0.18);
+  color: oklch(0.8 0.16 155);
+}
+
+.sent-actions {
+  margin-top: 1.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+/* --- Карточки преимуществ и этапов -------------------------------------- */
+
+.cards-grid {
+  margin-top: 3rem;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .cards-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.card {
+  border-radius: var(--radius-lg);
+  padding: 1.5rem;
+  height: 100%;
+}
+
+.card-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.875rem;
+  display: grid;
+  place-items: center;
+  background: oklch(0.7 0.18 280 / 0.16);
+  color: oklch(0.82 0.12 285);
+}
+
+.card-icon svg {
+  width: 1.375rem;
+  height: 1.375rem;
+}
+
+.card h3 {
+  margin-top: 1.125rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.card p {
+  margin-top: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.9375rem;
+}
+
+/* Этапы работы */
+.steps {
+  margin-top: 3rem;
+  display: grid;
+  gap: 1rem;
+  counter-reset: step;
+  list-style: none;
+  padding: 0;
+}
+
+@media (min-width: 600px) {
+  .steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Пять шагов в ряд помещаются только на широком экране */
+@media (min-width: 1024px) {
+  .steps {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.step {
+  position: relative;
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.25rem;
+  counter-increment: step;
+}
+
+.step::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--primary-foreground);
+  background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+}
+
+.step h3 {
+  margin-top: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.step p {
+  margin-top: 0.375rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+/* --- Вопросы и ответы --------------------------------------------------- */
+
+.faq {
+  margin-top: 3rem;
+  max-width: 44rem;
+  margin-inline: auto;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.faq details {
+  border-radius: var(--radius-lg);
+  padding: 0 1.25rem;
+  overflow: hidden;
+}
+
+.faq summary {
+  padding-block: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq summary::after {
+  content: "";
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-right: 2px solid var(--muted-foreground);
+  border-bottom: 2px solid var(--muted-foreground);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.25s;
+}
+
+.faq details[open] summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.faq details p {
+  padding-bottom: 1.25rem;
+  color: var(--muted-foreground);
+  font-size: 0.9375rem;
+}
+
+/* --- Финальный призыв --------------------------------------------------- */
+
+.final-cta {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  padding: 3rem 1.5rem;
+  text-align: center;
+  margin-block: 1rem;
+}
+
+@media (min-width: 768px) {
+  .final-cta {
+    padding: 4rem 3rem;
+  }
+}
+
+.final-cta h2 {
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.final-cta p {
+  margin-top: 1rem;
+  color: var(--muted-foreground);
+  max-width: 34rem;
+  margin-inline: auto;
+}
+
+.final-cta-actions {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+}
+
+/* --- Подвал ------------------------------------------------------------- */
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 4rem;
+  padding-block: 2.5rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.footer-grid {
+  display: grid;
+  gap: 2rem;
+}
+
+@media (min-width: 768px) {
+  .footer-grid {
+    grid-template-columns: 1.4fr 1fr 1fr;
+  }
+}
+
+.footer-col h3 {
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.footer-col ul {
+  margin-top: 0.875rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.footer-col a:hover {
+  color: var(--foreground);
+}
+
+.footer-bottom {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+}
+
+/* --- Плавающая кнопка на мобильных -------------------------------------- */
+
+.sticky-cta {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 40;
+  display: none;
+}
+
+.sticky-cta.is-visible {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .sticky-cta {
+    display: none !important;
+  }
+}
+
+/* --- Появление секций при прокрутке ------------------------------------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(1.25rem);
+  transition: opacity 0.6s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* --- Уважение к настройкам движения ------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- Страница политики -------------------------------------------------- */
+
+.legal {
+  max-width: 48rem;
+  margin-inline: auto;
+  padding-block: 3rem;
+}
+
+.legal h1 {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+.legal h2 {
+  margin-top: 2.5rem;
+  font-size: 1.25rem;
+}
+
+.legal p,
+.legal li {
+  margin-top: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.legal ul {
+  padding-left: 1.25rem;
+}

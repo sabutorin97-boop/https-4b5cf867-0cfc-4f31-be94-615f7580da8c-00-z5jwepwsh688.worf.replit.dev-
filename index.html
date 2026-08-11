@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Окна Профигрупп — подбор окон за 1 минуту и бесплатный замер</title>
+<meta name="description" content="Ответьте на 6 вопросов — подберём профиль, стеклопакет и фурнитуру под вашу задачу: тишина, тепло, свет или безопасность. Замер бесплатно, гарантия 5 лет.">
+<meta name="theme-color" content="#161528">
+<link rel="canonical" href="https://okna-profigrupp.ru/">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Окна Профигрупп">
+<meta property="og:title" content="Окна Профигрупп — подбор окон за 1 минуту">
+<meta property="og:description" content="Пройдите короткий квиз и узнайте, какая комплектация решит именно вашу задачу. Замер бесплатно.">
+<meta property="og:url" content="https://okna-profigrupp.ru/">
+<meta property="og:locale" content="ru_RU">
+</head>
+<body>
+
+<!-- Набор иконок. Рисуются инлайн, чтобы страница не тянула ничего извне. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-window" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/>
+    </symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M13.8 16.6a1 1 0 0 0 1.2-.3l.4-.5a2 2 0 0 1 1.6-.8h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.5.35a1 1 0 0 0-.3 1.25 14 14 0 0 0 6.4 6.4"/>
+    </symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>
+    </symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9.9 15.5A2 2 0 0 0 8.5 14.1l-6.1-1.6a.5.5 0 0 1 0-1L8.5 9.9A2 2 0 0 0 9.9 8.5l1.6-6.1a.5.5 0 0 1 1 0l1.5 6.1a2 2 0 0 0 1.5 1.4l6.1 1.6a.5.5 0 0 1 0 1l-6.1 1.5a2 2 0 0 0-1.5 1.5l-1.5 6.1a.5.5 0 0 1-1 0z"/>
+    </symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 6 9 17l-5-5"/>
+    </symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+    </symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M20 13c0 5-3.5 7.5-7.7 9a1 1 0 0 1-.7 0C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z"/>
+    </symbol>
+    <symbol id="i-thermometer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 4v10.5a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/>
+    </symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="m16 9 6 6M22 9l-6 6"/>
+    </symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>
+    </symbol>
+    <symbol id="i-ruler" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.4 2.4 0 0 1 0-3.4l2.6-2.6a2.4 2.4 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2M11.5 9.5l2-2M8.5 6.5l2-2M17.5 15.5l2-2"/>
+    </symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M15 18H9"/><path d="M19 18h2a1 1 0 0 0 1-1v-3.7a1 1 0 0 0-.2-.6l-3.5-4.3a1 1 0 0 0-.8-.4H14"/><circle cx="17" cy="18" r="2"/><circle cx="7" cy="18" r="2"/>
+    </symbol>
+    <symbol id="i-award" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="m15.5 12.9 1.5 8.5a.5.5 0 0 1-.8.5l-3.6-2.7a1 1 0 0 0-1.2 0l-3.6 2.7a.5.5 0 0 1-.8-.5l1.5-8.5"/><circle cx="12" cy="8" r="6"/>
+    </symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>
+    </symbol>
+    <symbol id="i-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-8 7.9l-6.9 7a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-8l-3.7 3.8z"/>
+    </symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12.8 2.2a2 2 0 0 0-1.6 0L2.6 6.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0l8.6-3.9a1 1 0 0 0 0-1.8z"/><path d="m6.1 9.5-3.5 1.6a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0l8.6-3.9a1 1 0 0 0 0-1.8l-3.5-1.6"/>
+    </symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+    </symbol>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .7-1.5l7-6a2 2 0 0 1 2.6 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+    </symbol>
+    <symbol id="i-droplets" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7 16.3c2.2 0 4-1.8 4-4 0-1.2-.6-2.3-1.7-3.2S7.3 6.8 7 5.3c-.3 1.5-1.1 2.8-2.3 3.8S3 11.1 3 12.3c0 2.2 1.8 4 4 4z"/><path d="M12.6 6.6A11 11 0 0 0 14 3c.5 2.5 2 4.9 4 6.5s3 3.5 3 5.5a7 7 0 0 1-11.9 5"/>
+    </symbol>
+    <symbol id="i-message" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ======================= Шапка ======================= -->
+<header class="site-header">
+  <div class="container">
+    <a class="logo" href="#top" aria-label="Окна Профигрупп — на главную">
+      <span class="logo-mark bg-gradient-brand"><svg aria-hidden="true"><use href="#i-window"></use></svg></span>
+      Окна&nbsp;Профигрупп
+    </a>
+
+    <nav class="site-nav" aria-label="Разделы страницы">
+      <a class="link-underline" href="#quiz">Подбор окон</a>
+      <a class="link-underline" href="#advantages">Почему мы</a>
+      <a class="link-underline" href="#process">Как работаем</a>
+      <a class="link-underline" href="#faq">Вопросы</a>
+    </nav>
+
+    <div class="header-actions">
+      <a class="header-phone link-underline" href="tel:+70000000000" data-role="phone-link">+7 000 000-00-00</a>
+      <a class="btn btn-primary header-cta" href="#quiz">
+        <svg class="btn-icon" aria-hidden="true"><use href="#i-ruler"></use></svg>
+        Бесплатный замер
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ======================= Первый экран ======================= -->
+  <section class="hero">
+    <div class="hero-grid-bg grid-bg" aria-hidden="true"></div>
+    <div class="container">
+      <div class="hero-layout">
+        <div>
+          <p class="chip chip-live">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            Замер бесплатно — сегодня и завтра есть свободное время
+          </p>
+
+          <h1>Подберём окна под <span class="text-gradient">вашу задачу</span> за одну минуту</h1>
+
+          <p class="hero-sub">
+            Не нужно разбираться в камерах, стеклопакетах и фурнитуре. Ответьте на
+            шесть вопросов — покажем, какая комплектация решит именно вашу проблему:
+            шум с улицы, холод, темнота или безопасность детей.
+          </p>
+
+          <div class="hero-chips">
+            <span class="chip">Замер бесплатно</span>
+            <span class="chip">Гарантия 5 лет</span>
+            <span class="chip">Монтаж по ГОСТ</span>
+            <span class="chip">Установка за 1 день</span>
+          </div>
+
+          <div class="hero-actions">
+            <a class="btn btn-primary btn-lg" href="#quiz">
+              <svg class="btn-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+              Подобрать окна
+            </a>
+            <a class="btn btn-outline btn-lg" href="tel:+70000000000" data-role="phone-link">
+              <svg class="btn-icon" aria-hidden="true"><use href="#i-phone"></use></svg>
+              Позвонить
+            </a>
+          </div>
+
+          <p class="hero-note">Без звонков-навязываний: сначала расчёт, решение — за вами.</p>
+        </div>
+
+        <div class="hero-visual">
+          <div class="hero-card glass shadow-glow">
+            <div class="window-art" role="img" aria-label="Схематичное изображение окна с четырьмя секциями">
+              <span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+          <div class="hero-badge glass hero-badge-tl">
+            <span>Тише на улице</span>
+            <strong>до −38 дБ</strong>
+          </div>
+          <div class="hero-badge glass hero-badge-br">
+            <span>Теплее в комнате</span>
+            <strong>+4…6 °C зимой</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= Полоса цифр ======================= -->
+  <section class="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div class="reveal">
+          <div class="stat-value text-gradient">12 лет</div>
+          <div class="stat-label">на рынке остекления</div>
+        </div>
+        <div class="reveal">
+          <div class="stat-value text-gradient">8 400+</div>
+          <div class="stat-label">установленных окон</div>
+        </div>
+        <div class="reveal">
+          <div class="stat-value text-gradient">5 лет</div>
+          <div class="stat-label">гарантии на монтаж</div>
+        </div>
+        <div class="reveal">
+          <div class="stat-value text-gradient">1 день</div>
+          <div class="stat-label">на установку в квартире</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= Квиз ======================= -->
+  <section class="section" id="quiz">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Подбор решения</span>
+        <h2>Шесть вопросов — и вы узнаете, <span class="text-gradient">какие окна вам нужны</span></h2>
+        <p>
+          Мы не считаем цену «на глаз»: точная стоимость известна только после замера.
+          Зато сразу скажем, какая комплектация решит вашу задачу, а за что переплачивать не нужно.
+        </p>
+      </div>
+
+      <div class="quiz-shell glass shadow-glow reveal" id="quiz-shell">
+        <div id="quiz-progress">
+          <div class="quiz-meta">
+            <span id="quiz-counter">Вопрос 1 из 6</span>
+            <span id="quiz-percent">0%</span>
+          </div>
+          <div class="progress">
+            <div class="progress-bar" id="quiz-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Прогресс подбора"></div>
+          </div>
+        </div>
+
+        <div id="quiz-body" aria-live="polite">
+          <noscript>
+            <p class="quiz-question">Для подбора нужен включённый JavaScript</p>
+            <p class="quiz-hint">
+              Ничего страшного — позвоните нам, и мы подберём окна по телефону:
+              <a class="link-underline" href="tel:+70000000000">+7 000 000-00-00</a>
+            </p>
+          </noscript>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= Почему мы ======================= -->
+  <section class="section" id="advantages">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Почему мы</span>
+        <h2>Работаем так, как хотели&nbsp;бы <span class="text-gradient">для себя</span></h2>
+      </div>
+
+      <div class="cards-grid">
+        <article class="card glass reveal">
+          <div class="card-icon"><svg aria-hidden="true"><use href="#i-ruler"></use></svg></div>
+          <h3>Замер бесплатно и ни к чему не обязывает</h3>
+          <p>Инженер приедет, снимет размеры, проверит откосы и подоконник. Смету получите на месте — на бумаге, без «звёздочек» и скрытых доплат.</p>
+        </article>
+
+        <article class="card glass reveal">
+          <div class="card-icon"><svg aria-hidden="true"><use href="#i-layers"></use></svg></div>
+          <h3>Подбираем под задачу, а не по прайсу</h3>
+          <p>Если для вашей квартиры хватит двухкамерного стеклопакета — так и скажем. Продавать шестикамерный профиль там, где он не нужен, мы не станем.</p>
+        </article>
+
+        <article class="card glass reveal">
+          <div class="card-icon"><svg aria-hidden="true"><use href="#i-wrench"></use></svg></div>
+          <h3>Монтаж по ГОСТ, своими бригадами</h3>
+          <p>Никакого субподряда. Трёхслойный монтажный шов, пароизоляция изнутри, гидроизоляция снаружи — окно не «плачет» и не промерзает по краям.</p>
+        </article>
+
+        <article class="card glass reveal">
+          <div class="card-icon"><svg aria-hidden="true"><use href="#i-clock"></use></svg></div>
+          <h3>Устанавливаем за один день</h3>
+          <p>Стандартную квартиру закрываем с утра до вечера. Мусор вывозим, полы застилаем, за собой убираем — жить в ремонте неделю не придётся.</p>
+        </article>
+
+        <article class="card glass reveal">
+          <div class="card-icon"><svg aria-hidden="true"><use href="#i-award"></use></svg></div>
+          <h3>Гарантия 5 лет на работу</h3>
+          <p>Гарантия на профиль и стеклопакет — от завода, на монтаж — от нас. Если продует или заклинит, приедем и отрегулируем бесплатно.</p>
+        </article>
+
+        <article class="card glass reveal">
+          <div class="card-icon"><svg aria-hidden="true"><use href="#i-shield"></use></svg></div>
+          <h3>Фиксируем цену в договоре</h3>
+          <p>Сумма из сметы не меняется после подписания. Курс, подорожание фурнитуры и «мы не учли откосы» — это наши риски, а не ваши.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= Как работаем ======================= -->
+  <section class="section" id="process">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Как проходит работа</span>
+        <h2>От заявки до готового окна — <span class="text-gradient">пять шагов</span></h2>
+      </div>
+
+      <ol class="steps">
+        <li class="step glass reveal">
+          <h3>Замер</h3>
+          <p>Приезжаем в удобное время, снимаем размеры и смотрим состояние проёма.</p>
+        </li>
+        <li class="step glass reveal">
+          <h3>Смета</h3>
+          <p>Показываем 2–3 варианта комплектации с ценой и объясняем разницу.</p>
+        </li>
+        <li class="step glass reveal">
+          <h3>Договор</h3>
+          <p>Фиксируем цену, сроки и гарантию. Предоплата — 30%.</p>
+        </li>
+        <li class="step glass reveal">
+          <h3>Производство</h3>
+          <p>Изготовление занимает 5–10 рабочих дней, держим вас в курсе.</p>
+        </li>
+        <li class="step glass reveal">
+          <h3>Монтаж</h3>
+          <p>Ставим за день, настраиваем фурнитуру и передаём гарантийный талон.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ======================= Вопросы и ответы ======================= -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-head reveal">
+        <span class="eyebrow">Частые вопросы</span>
+        <h2>Что спрашивают <span class="text-gradient">чаще всего</span></h2>
+      </div>
+
+      <div class="faq">
+        <details class="glass reveal">
+          <summary>Почему на сайте нет цен?</summary>
+          <p>Потому что честную цену без замера назвать нельзя. Она зависит от размеров проёма, состояния откосов, этажа, необходимости демонтажа и подъёма конструкций. Любая цифра «от 9 900 ₽» на сайте — это самое маленькое глухое окно, которое вам, скорее всего, не подойдёт. Мы называем сумму после замера и больше её не меняем.</p>
+        </details>
+
+        <details class="glass reveal">
+          <summary>Замер правда бесплатный?</summary>
+          <p>Да, и он ни к чему не обязывает. Если после замера вы решите не заказывать — просто скажите об этом, никаких «выездных» или «за консультацию» мы не берём.</p>
+        </details>
+
+        <details class="glass reveal">
+          <summary>Сколько ждать окна после заказа?</summary>
+          <p>Изготовление — от 5 до 10 рабочих дней в зависимости от загрузки завода и сложности конструкции. Ламинированные и нестандартные окна делают дольше, обычно до двух недель. Точный срок пишем в договоре.</p>
+        </details>
+
+        <details class="glass reveal">
+          <summary>Можно менять окна зимой?</summary>
+          <p>Можно. Монтажная пена и герметики работают до −15 °C, а проём открыт всего 20–40 минут на окно. Квартира за это время не выстывает. Зимой даже удобнее: сразу видно, продувает где-то или нет.</p>
+        </details>
+
+        <details class="glass reveal">
+          <summary>Что делать с откосами и подоконником?</summary>
+          <p>Считаем их в смете отдельной строкой, чтобы вы видели, за что платите. Обычно ставим откосы из сэндвич-панели — они тёплые и не требуют покраски. Если хотите оштукатурить сами, окно сдадим с чистым проёмом.</p>
+        </details>
+
+        <details class="glass reveal">
+          <summary>Окна «плачут» — это брак?</summary>
+          <p>Почти никогда. Конденсат на стекле — это, как правило, недостаток вентиляции и широкий подоконник, перекрывающий батарею. На замере мы это заметим и подскажем, что поправить: приточный клапан, решётку в подоконнике или другой стеклопакет.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= Финальный призыв ======================= -->
+  <section class="section">
+    <div class="container">
+      <div class="final-cta glass shadow-glow reveal">
+        <div class="grid-bg" aria-hidden="true" style="position:absolute;inset:0;opacity:.5;pointer-events:none"></div>
+        <div style="position:relative">
+          <h2>Начните с бесплатного замера</h2>
+          <p>Инженер приедет в удобное время, снимет размеры и на месте покажет смету. Дальше решаете вы — без давления и звонков каждый день.</p>
+          <div class="final-cta-actions">
+            <a class="btn btn-primary btn-lg" href="#quiz">
+              <svg class="btn-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+              Подобрать окна за минуту
+            </a>
+            <a class="btn btn-outline btn-lg" href="tel:+70000000000" data-role="phone-link">
+              <svg class="btn-icon" aria-hidden="true"><use href="#i-phone"></use></svg>
+              +7 000 000-00-00
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ======================= Подвал ======================= -->
+<footer class="site-footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <a class="logo" href="#top">
+          <span class="logo-mark bg-gradient-brand"><svg aria-hidden="true"><use href="#i-window"></use></svg></span>
+          Окна&nbsp;Профигрупп
+        </a>
+        <p style="margin-top:.875rem;max-width:26rem">
+          Производство и установка пластиковых окон под ключ. Замер, изготовление,
+          монтаж по ГОСТ и гарантийное обслуживание.
+        </p>
+      </div>
+
+      <div class="footer-col">
+        <h3>Разделы</h3>
+        <ul>
+          <li><a class="link-underline" href="#quiz">Подбор окон</a></li>
+          <li><a class="link-underline" href="#advantages">Почему мы</a></li>
+          <li><a class="link-underline" href="#process">Как работаем</a></li>
+          <li><a class="link-underline" href="#faq">Вопросы и ответы</a></li>
+        </ul>
+      </div>
+
+      <div class="footer-col">
+        <h3>Контакты</h3>
+        <ul>
+          <li><a class="link-underline" href="tel:+70000000000" data-role="phone-link">+7 000 000-00-00</a></li>
+          <li><a class="link-underline" href="mailto:zakaz@okna-profigrupp.ru" data-role="email-link">zakaz@okna-profigrupp.ru</a></li>
+          <li>Ежедневно с 9:00 до 20:00</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer-bottom">
+      <span>© <span id="year">2026</span> Окна Профигрупп</span>
+      <a class="link-underline" href="privacy.html">Политика обработки персональных данных</a>
+    </div>
+  </div>
+</footer>
+
+<!-- Плавающая кнопка: появляется на мобильных после первого экрана -->
+<div class="sticky-cta" id="sticky-cta">
+  <a class="btn btn-primary btn-lg btn-block" href="#quiz">
+    <svg class="btn-icon" aria-hidden="true"><use href="#i-sparkles"></use></svg>
+    Подобрать окна за минуту
+  </a>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
