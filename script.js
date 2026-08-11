@@ -505,7 +505,8 @@
     form.noValidate = true;
 
     form.appendChild(el("p", "quiz-hint",
-      "Оставьте контакты — инженер приедет на бесплатный замер и уточнит комплектацию на месте."));
+      "Оставьте контакты — инженер приедет на замер и уточнит комплектацию на месте. " +
+      "Выезд по городу 500 ₽, при заключении договора вычитаем их из стоимости заказа."));
 
     var row = el("div", "field-row");
 
@@ -609,7 +610,7 @@
     var submitButton = el("button", "btn btn-primary btn-lg btn-block");
     submitButton.type = "submit";
     submitButton.appendChild(icon("i-ruler", "btn-icon"));
-    submitButton.appendChild(el("span", null, "Записаться на бесплатный замер"));
+    submitButton.appendChild(el("span", null, "Записаться на замер"));
     form.appendChild(submitButton);
 
     var status = el("div", "form-status");
