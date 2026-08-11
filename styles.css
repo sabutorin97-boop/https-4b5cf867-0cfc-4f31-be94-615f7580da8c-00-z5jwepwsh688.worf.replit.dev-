@@ -173,6 +173,13 @@ p {
   position: relative;
 }
 
+/* Невидимый запас вокруг ссылки: пальцем попасть легко, вид не меняется */
+.link-underline::before {
+  content: "";
+  position: absolute;
+  inset: -0.625rem -0.375rem;
+}
+
 .link-underline::after {
   content: "";
   position: absolute;
@@ -389,6 +396,8 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 0.625rem;
+  /* Вертикальный запас, чтобы по логотипу было удобно попадать пальцем */
+  padding-block: 0.5rem;
   font-weight: 700;
   font-size: 1.0625rem;
   letter-spacing: -0.02em;
@@ -799,6 +808,38 @@ p {
 
   .window-mode-still {
     opacity: 1;
+  }
+}
+
+/* Телефон в альбомной ориентации: высота экрана маленькая,
+   поэтому ужимаем первый экран, чтобы кнопка не уезжала за него. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .hero .container {
+    padding-top: 1.25rem;
+    padding-bottom: 1.75rem;
+  }
+
+  .hero h1 {
+    margin-top: 0.875rem;
+    font-size: clamp(1.5rem, 3.6vw, 2.125rem);
+  }
+
+  .hero-sub {
+    margin-top: 0.75rem;
+    font-size: 0.9375rem;
+  }
+
+  .hero-chips,
+  .hero-actions {
+    margin-top: 1rem;
+  }
+
+  .hero-note {
+    margin-top: 0.75rem;
+  }
+
+  .section {
+    padding-block: 2.5rem;
   }
 }
 
@@ -1467,11 +1508,30 @@ p {
 }
 
 .footer-col ul {
-  margin-top: 0.875rem;
+  margin-top: 0.5rem;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 0.5rem;
+  gap: 0;
+}
+
+/* Ссылки идут столбиком, поэтому запас делаем настоящим отступом:
+   невидимая зона от .link-underline тут накладывалась бы на соседей. */
+.footer-col ul a {
+  display: inline-block;
+  padding-block: 0.75rem;
+}
+
+.footer-col ul a.link-underline::before {
+  inset: 0;
+}
+
+.footer-col ul a.link-underline::after {
+  bottom: 0.625rem;
+}
+
+.footer-col ul li:not(:has(a)) {
+  padding-block: 0.75rem;
 }
 
 .footer-col a:hover {
@@ -1502,6 +1562,14 @@ p {
 
 .sticky-cta.is-visible {
   display: block;
+}
+
+/* Пока плавающая кнопка на экране, подвалу нужен запас снизу —
+   иначе она закрывает копирайт и ссылку на политику. */
+@media (max-width: 767px) {
+  .site-footer {
+    padding-bottom: 5.5rem;
+  }
 }
 
 @media (min-width: 768px) {
