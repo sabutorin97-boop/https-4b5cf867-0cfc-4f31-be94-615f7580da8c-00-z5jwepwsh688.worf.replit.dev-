@@ -1196,11 +1196,24 @@ p {
 }
 
 .consent input {
-  margin-top: 0.1875rem;
-  width: 1rem;
-  height: 1rem;
+  margin-top: 0.125rem;
+  width: 1.25rem;
+  height: 1.25rem;
   flex: none;
   accent-color: oklch(0.7 0.18 280);
+  cursor: pointer;
+}
+
+/* Подсказка, почему кнопка отправки пока недоступна */
+.consent-hint {
+  margin-top: -0.375rem;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+.consent-hint[hidden] {
+  display: none;
 }
 
 .consent a {

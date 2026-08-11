@@ -622,11 +622,12 @@
     honeypot.appendChild(hpInput);
     form.appendChild(honeypot);
 
-    /* Согласие */
+    /* Согласие. Галочка снята: по закону согласие даёт сам человек,
+       предустановленная отметка согласием не считается. */
     var consent = el("label", "consent");
     var consentInput = el("input");
     consentInput.type = "checkbox";
-    consentInput.checked = true;
+    consentInput.checked = false;
     consent.appendChild(consentInput);
     var consentText = el("span");
     consentText.appendChild(document.createTextNode("Согласен на обработку персональных данных согласно "));
@@ -638,16 +639,29 @@
     consent.appendChild(consentText);
     form.appendChild(consent);
 
-    /* Отправка */
+    /* Отправка. Кнопка недоступна, пока человек не отметил согласие */
     var submitButton = el("button", "btn btn-primary btn-lg btn-block");
     submitButton.type = "submit";
+    submitButton.disabled = true;
     submitButton.appendChild(icon("i-ruler", "btn-icon"));
     submitButton.appendChild(el("span", null, "Записаться на замер"));
     form.appendChild(submitButton);
 
+    var consentHint = el("p", "consent-hint", "Отметьте согласие — тогда кнопка станет активной.");
+    form.appendChild(consentHint);
+
     var status = el("div", "form-status");
     status.setAttribute("role", "status");
     form.appendChild(status);
+
+    consentInput.addEventListener("change", function () {
+      submitButton.disabled = !consentInput.checked;
+      consentHint.hidden = consentInput.checked;
+      if (consentInput.checked && status.getAttribute("data-tone") === "error") {
+        status.textContent = "";
+        status.setAttribute("data-tone", "");
+      }
+    });
 
     var restart = el("button", "btn btn-ghost");
     restart.type = "button";
