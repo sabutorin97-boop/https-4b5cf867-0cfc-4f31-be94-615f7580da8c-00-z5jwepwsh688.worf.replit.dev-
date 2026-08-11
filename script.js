@@ -18,7 +18,15 @@
     FORM_ENDPOINT: "",
 
     COMPANY: "Окна Профигрупп",
-    CONTACT_PHONE: "+7 000 000-00-00",
+
+    // Первый номер — основной: он подставляется в шапку и кнопки «Позвонить».
+    // В подвал выводится весь список.
+    PHONES: [
+      { label: "8 (3522) 65-02-09", tel: "+73522650209", note: "городской" },
+      { label: "+7 912 835-54-11", tel: "+79128355411", note: "мобильный" },
+      { label: "555-411", tel: "555411", note: "короткий, для абонентов МТС" }
+    ],
+
     CONTACT_EMAIL: "zakaz@okna-profigrupp.ru",
     TELEGRAM_URL: "https://t.me/sabutorin45"
   };
@@ -725,7 +733,7 @@
           shell.scrollIntoView({ behavior: "smooth", block: "start" });
         } else {
           status.setAttribute("data-tone", "error");
-          status.textContent = "Не получилось отправить. Позвоните нам: " + SETTINGS.CONTACT_PHONE;
+          status.textContent = "Не получилось отправить. Позвоните нам: " + SETTINGS.PHONES[0].label;
         }
       });
     });
@@ -753,7 +761,7 @@
     var actions = el("div", "sent-actions");
 
     var call = el("a", "btn btn-primary");
-    call.href = "tel:" + phoneDigitsToHref(SETTINGS.CONTACT_PHONE);
+    call.href = "tel:" + SETTINGS.PHONES[0].tel;
     call.appendChild(icon("i-phone", "btn-icon"));
     call.appendChild(el("span", null, "Позвонить сейчас"));
     actions.appendChild(call);
@@ -833,11 +841,6 @@
     return parts.join(" ");
   }
 
-  function phoneDigitsToHref(phone) {
-    var digits = phoneDigits(phone);
-    return digits ? "+" + digits : "";
-  }
-
   function sendLead(lead, done) {
     var text = buildLeadText(lead);
 
@@ -880,12 +883,32 @@
      ====================================================================== */
 
   function applySettings() {
+    var main = SETTINGS.PHONES[0];
+
     document.querySelectorAll('[data-role="phone-link"]').forEach(function (node) {
-      node.href = "tel:" + phoneDigitsToHref(SETTINGS.CONTACT_PHONE);
-      if (/\+?\d[\d\s()\-]{6,}/.test(node.textContent)) {
-        node.textContent = SETTINGS.CONTACT_PHONE;
-      }
+      node.href = "tel:" + main.tel;
+      // Правим только текстовый узел: внутри ссылки может лежать иконка,
+      // а замена всего содержимого её бы уничтожила
+      Array.prototype.forEach.call(node.childNodes, function (child) {
+        if (child.nodeType === 3 && /\d[\d\s()\-]{5,}/.test(child.nodeValue)) {
+          child.nodeValue = main.label;
+        }
+      });
     });
+
+    // В подвале показываем все номера — с пометкой, какой для чего
+    var list = document.querySelector('[data-role="phone-list"]');
+    if (list) {
+      list.textContent = "";
+      SETTINGS.PHONES.forEach(function (phone) {
+        var item = el("li");
+        var link = el("a", "link-underline", phone.label);
+        link.href = "tel:" + phone.tel;
+        item.appendChild(link);
+        if (phone.note) item.appendChild(el("span", "phone-note", phone.note));
+        list.appendChild(item);
+      });
+    }
     document.querySelectorAll('[data-role="email-link"]').forEach(function (node) {
       node.href = "mailto:" + SETTINGS.CONTACT_EMAIL;
       node.textContent = SETTINGS.CONTACT_EMAIL;

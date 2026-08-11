@@ -1506,9 +1506,16 @@ p {
   gap: 2rem;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 600px) {
   .footer-grid {
-    grid-template-columns: 1.4fr 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Четыре блока в ряд помещаются только на широком экране */
+@media (min-width: 1024px) {
+  .footer-grid {
+    grid-template-columns: minmax(0, 1.5fr) repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1545,6 +1552,14 @@ p {
 
 .footer-col ul li:not(:has(a)) {
   padding-block: 0.75rem;
+}
+
+/* Пометка возле номера: городской, мобильный, короткий */
+.phone-note {
+  display: block;
+  margin-top: -0.5rem;
+  font-size: 0.75rem;
+  color: oklch(0.58 0.015 270);
 }
 
 .footer-col a:hover {
