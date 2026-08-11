@@ -39,8 +39,10 @@ var SETTINGS = {
     { label: "555-411", tel: "555411", note: "короткий, для абонентов МТС" }
   ],
 
-  CONTACT_EMAIL: "zakaz@okna-profigrupp.ru",  // ваша почта
-  TELEGRAM_URL: "https://t.me/sabutorin45"    // ваш Telegram
+  CONTACT_EMAIL: "potolok-45@yandex.ru",      // временная почта для заявок
+
+  MESSENGER_URL: "",                          // ссылка на МАКС, пока пусто
+  MESSENGER_LABEL: "Написать в МАКС"
 };
 ```
 

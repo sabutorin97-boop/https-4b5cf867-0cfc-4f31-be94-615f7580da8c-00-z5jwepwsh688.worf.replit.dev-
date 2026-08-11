@@ -27,8 +27,13 @@
       { label: "555-411", tel: "555411", note: "короткий, для абонентов МТС" }
     ],
 
-    CONTACT_EMAIL: "zakaz@okna-profigrupp.ru",
-    TELEGRAM_URL: "https://t.me/sabutorin45"
+    // Временная почта для заявок — заменить, когда заведёте ящик на своём домене
+    CONTACT_EMAIL: "potolok-45@yandex.ru",
+
+    // Ссылка на мессенджер для кнопки на экране «Заявка принята».
+    // Пока пусто — кнопка не показывается.
+    MESSENGER_URL: "",
+    MESSENGER_LABEL: "Написать в МАКС"
   };
 
   /* ======================================================================
@@ -607,8 +612,7 @@
     waySelect.name = "way";
     [
       "Позвонить",
-      "Написать в WhatsApp",
-      "Написать в Telegram",
+      "Написать в МАКС",
       "Прислать смс — звонить неудобно"
     ].forEach(function (option) {
       var opt = el("option", null, option);
@@ -766,14 +770,14 @@
     call.appendChild(el("span", null, "Позвонить сейчас"));
     actions.appendChild(call);
 
-    if (SETTINGS.TELEGRAM_URL) {
-      var tg = el("a", "btn btn-outline");
-      tg.href = SETTINGS.TELEGRAM_URL;
-      tg.target = "_blank";
-      tg.rel = "noopener";
-      tg.appendChild(icon("i-send", "btn-icon"));
-      tg.appendChild(el("span", null, "Написать в Telegram"));
-      actions.appendChild(tg);
+    if (SETTINGS.MESSENGER_URL) {
+      var messenger = el("a", "btn btn-outline");
+      messenger.href = SETTINGS.MESSENGER_URL;
+      messenger.target = "_blank";
+      messenger.rel = "noopener";
+      messenger.appendChild(icon("i-send", "btn-icon"));
+      messenger.appendChild(el("span", null, SETTINGS.MESSENGER_LABEL));
+      actions.appendChild(messenger);
     }
 
     wrap.appendChild(actions);

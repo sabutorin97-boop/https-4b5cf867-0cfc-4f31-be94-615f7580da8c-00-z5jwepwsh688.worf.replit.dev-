@@ -12,7 +12,7 @@
 declare(strict_types=1);
 
 /** Куда приходят заявки. */
-const RECIPIENT = 'zakaz@okna-profigrupp.ru';
+const RECIPIENT = 'potolok-45@yandex.ru';
 
 /** От чьего имени уходит письмо. Обязательно адрес на вашем домене,
  *  иначе письмо уйдёт в спам или не отправится вовсе. */
