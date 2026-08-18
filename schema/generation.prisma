@@ -1,0 +1,711 @@
+// ============================================================
+//  КОНТУР ГЕНЕРАЦИЙ
+//  Кабинет доступен напрямую, наружу к провайдерам — только через egress.
+//  Баланса здесь НЕТ. userId — просто UUID из биллинга, без внешнего ключа.
+//  Себестоимость фиксируется в момент генерации: USD + курс + копейки.
+//
+//  Версия 2. Изменения относительно v1 помечены [v2] с указанием причины.
+//  Разбор дефектов v1 — docs/01-review-v1.md
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("GENERATION_DATABASE_URL")
+}
+
+// ------------------------------------------------------------
+//  Профиль (зеркало, без данных авторизации)
+// ------------------------------------------------------------
+
+model Profile {
+  userId String @id @db.Uuid // приходит из JWT биллинга
+
+  // Кэш тарифа для быстрых проверок. Обновляется по profile-sync из биллинга
+  // (с гарантированной доставкой — см. WebhookDelivery в billing.prisma).
+  planCode       String    @default("FREE")
+  queuePriority  Int       @default(0)
+  concurrentJobs Int       @default(1)
+  allowBatch     Boolean   @default(false)
+  allowPremium   Boolean   @default(false)
+  allowRecipes   Boolean   @default(false)
+  watermark      Boolean   @default(true)
+  storageDays    Int?
+  planSyncedAt   DateTime?
+  // [v2] Версия применённого события: события старее игнорируются,
+  // иначе опоздавший profile-sync откатит только что купленный тариф.
+  planVersion    Int       @default(0)
+
+  // [v2] Гостевой профиль. Результат гостя переносится в аккаунт при регистрации —
+  // это главный конверсионный крючок воронки (docs/04-product.md §4).
+  isGuest          Boolean   @default(false)
+  mergedIntoUserId String?   @db.Uuid
+  mergedAt         DateTime?
+
+  locale   String @default("ru")
+  settings Json?
+
+  projects     Project[]
+  generations  Generation[]
+  brandKits    BrandKit[]
+  chats        ChatSession[]
+  usageDays    UsageDaily[]
+  assets       Asset[]
+  pipelineRuns PipelineRun[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([mergedIntoUserId])
+}
+
+model BrandKit {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  title        String
+  colors       Json?
+  fonts        Json?
+  logoAssetId  String? @db.Uuid // [v2] теперь ссылается на реально существующую модель Asset
+  logoAsset    Asset?  @relation(fields: [logoAssetId], references: [id])
+  toneOfVoice  String?
+  promptSuffix String?
+  isDefault    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Project {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  title      String
+  brandKitId String?   @db.Uuid
+  archivedAt DateTime?
+
+  generations Generation[]
+  createdAt   DateTime     @default(now())
+
+  @@index([userId, archivedAt])
+}
+
+// ------------------------------------------------------------
+//  [v2] Ассеты — в v1 Generation.inputAssets был Json,
+//  а BrandKit.logoAssetId ссылался на несуществующую сущность.
+//  Следствия: нет дедупликации, нет статуса модерации файла,
+//  нет учёта места, нет корректного удаления из S3.
+// ------------------------------------------------------------
+
+model Asset {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  storageKey String @unique
+  mimeType   String
+  sizeBytes  Int
+  width      Int?
+  height     Int?
+  checksum   String // sha256: дедупликация повторных загрузок одного файла
+
+  // Модерация входного изображения (стадия INPUT_IMAGE)
+  moderationVerdict ModerationVerdict?
+  scannedAt         DateTime? // антивирус
+
+  brandKits BrandKit[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([checksum])
+}
+
+// ------------------------------------------------------------
+//  Каталог моделей и маршрутизация провайдеров
+// ------------------------------------------------------------
+
+// Единственное место, где задаётся цена для пользователя и маршрут.
+// Смена провайдера — правка строки, а не деплой.
+model Model {
+  id  String @id @default(uuid()) @db.Uuid
+  key String @unique // "image.fast", "image.pro", "video.short"
+
+  title       String
+  description String?
+  category    ModelCategory
+  previewUrl  String?
+
+  priceCredits Int
+  isFree       Boolean @default(false)
+  isPremium    Boolean @default(false)
+
+  primaryProvider  Provider
+  primaryModelId   String
+  fallbackProvider Provider?
+  fallbackModelId  String?
+
+  expectedCostUsd Decimal @db.Decimal(10, 6)
+
+  defaultParams Json?
+  timeoutSec    Int     @default(300)
+  maxAttempts   Int     @default(2) // [v2] участвует в расчёте TTL холда
+  enabled       Boolean @default(true)
+  sortOrder     Int     @default(0)
+
+  // [v2] Умеет ли провайдер идемпотентность / поиск задачи по нашему ключу.
+  // От этого зависит, можно ли безопасно реконсилировать SUBMIT_UNKNOWN
+  // вместо повторной отправки — цена ошибки — двойная оплата провайдеру.
+  supportsIdempotency Boolean @default(false)
+  supportsCallback    Boolean @default(true)
+
+  // [v2] Данные для честного ETA. Интерфейс в v1 обещал «оценку времени»,
+  // а считать её было не из чего. Пересчёт — фоновым заданием по 200 последним успехам.
+  p50LatencyMs Int?
+  p90LatencyMs Int?
+
+  generations Generation[]
+  presets     Preset[]
+  recipeSteps RecipeStep[]
+
+  updatedAt DateTime @updatedAt
+}
+
+enum ModelCategory {
+  IMAGE
+  IMAGE_EDIT
+  UPSCALE
+  BACKGROUND
+  VIDEO
+  AUDIO
+  TEXT
+}
+
+enum Provider {
+  KIE
+  OPENROUTER
+  GENAPI
+  MOCK // [v2] сервис-заглушка для E2E: сценарии отказа нельзя проверять на живом провайдере
+}
+
+// Состояние провайдеров: баланс, доступность туннеля.
+// Читается перед постановкой задачи — с кэшем в Redis, а не запросом на каждый вызов.
+model ProviderState {
+  provider Provider @id
+
+  balanceUsd Decimal? @db.Decimal(12, 4)
+  lowBalance Boolean  @default(false)
+  available  Boolean  @default(true)
+  egressOk   Boolean  @default(true)
+
+  // [v2] Для автоматического отключения и постепенного возврата
+  consecutiveFailures Int       @default(0)
+  errorRate15m        Decimal?  @db.Decimal(5, 4)
+  p50LatencyMs        Int?
+  disabledUntil       DateTime?
+
+  lastError String?
+  checkedAt DateTime?
+  updatedAt DateTime  @updatedAt
+}
+
+// Курс на день. Фиксируется в каждой генерации, чтобы отчёты не плыли.
+// [v2] ЦБ не публикует курс в выходные и праздники: используется последний
+// доступный, а в генерации сохраняется дата этого курса (fxRateDate).
+model FxRate {
+  date      DateTime @id @db.Date
+  usdRub    Decimal  @db.Decimal(10, 4)
+  source    String
+  createdAt DateTime @default(now())
+}
+
+model Preset {
+  id       String @id @default(uuid()) @db.Uuid
+  slug     String @unique
+  title    String
+  category String
+
+  modelId String @db.Uuid
+  model   Model  @relation(fields: [modelId], references: [id])
+
+  promptTemplate String
+  params         Json?
+  coverUrl       String?
+  usageCount     Int     @default(0)
+  enabled        Boolean @default(true)
+  sortOrder      Int     @default(0)
+}
+
+// ------------------------------------------------------------
+//  [v2] Рецепты — пайплайн из шагов, продаваемый как один результат.
+//  Пользователь покупает «карточку для WB», а не вызов модели.
+//  Резерв кредитов делается ОДИН раз на весь рецепт (PipelineRun).
+// ------------------------------------------------------------
+
+model Recipe {
+  id    String @id @default(uuid()) @db.Uuid
+  slug  String @unique
+  title String
+
+  description String?
+  coverUrl    String?
+  category    String
+
+  // Цена рецепта задаётся явно, а не суммой шагов: в неё входит наценка
+  // за упаковку и настроенные под площадку параметры.
+  priceCredits Int
+
+  // Требования площадки: размер, формат, фон
+  targetPlatform String? // WB | OZON | AVITO | VK | TELEGRAM
+  outputWidth    Int?
+  outputHeight   Int?
+
+  isPremium Boolean @default(false)
+  enabled   Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  steps RecipeStep[]
+  runs  PipelineRun[]
+
+  updatedAt DateTime @updatedAt
+}
+
+model RecipeStep {
+  id       String @id @default(uuid()) @db.Uuid
+  recipeId String @db.Uuid
+  recipe   Recipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  order   Int
+  modelId String @db.Uuid
+  model   Model  @relation(fields: [modelId], references: [id])
+
+  promptTemplate String?
+  params         Json?
+  // Показывать ли промежуточный результат пользователю
+  visible        Boolean @default(false)
+  // Можно ли пропустить шаг при ошибке, не роняя весь рецепт
+  optional       Boolean @default(false)
+
+  @@unique([recipeId, order])
+}
+
+model PipelineRun {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  recipeId String @db.Uuid
+  recipe   Recipe @relation(fields: [recipeId], references: [id])
+
+  status GenerationStatus @default(PENDING)
+
+  // Один холд на весь рецепт. Провал любого обязательного шага
+  // возвращает весь резерв целиком.
+  holdId         String?
+  idempotencyKey String
+  creditsCharged Int     @default(0)
+
+  currentStep Int @default(0)
+  totalSteps  Int
+
+  generations Generation[]
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, startedAt])
+  @@index([status])
+}
+
+// ------------------------------------------------------------
+//  Генерации
+// ------------------------------------------------------------
+
+model Generation {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId])
+
+  projectId String?  @db.Uuid
+  project   Project? @relation(fields: [projectId], references: [id])
+
+  modelId String @db.Uuid
+  model   Model  @relation(fields: [modelId], references: [id])
+
+  pipelineRunId String?      @db.Uuid
+  pipelineRun   PipelineRun? @relation(fields: [pipelineRunId], references: [id])
+  stepOrder     Int?
+
+  status GenerationStatus @default(PENDING)
+
+  promptRaw   String?
+  promptFinal String?
+  params      Json?
+  inputAssets Json? // массив assetId; сами файлы — в модели Asset
+
+  // --- Связь с биллингом ---
+  holdId          String?
+  // [v2] Ключ генерируется сервером. Клиентский идентификатор принимается
+  // отдельно и в ключ попадает только вместе с userId.
+  idempotencyKey  String
+  clientRequestId String?
+  creditsCharged  Int     @default(0)
+  refunded        Boolean @default(false)
+  // [v2] Фолбэк наследует холд родителя и НЕ создаёт второго резерва:
+  // иначе пользователь с балансом ровно в цену модели не получит фолбэк.
+  holdInherited   Boolean @default(false)
+
+  // [v2] Токен для аутентификации колбэка провайдера.
+  // В v1 колбэк не проверялся ничем — любой мог прислать {"status":"success"}.
+  callbackToken String?
+
+  // --- Фактическая себестоимость ---
+  provider        Provider?
+  providerModelId String?
+  providerTaskId  String?
+  costUsd         Decimal?    @db.Decimal(10, 6)
+  costSource      CostSource? // из ответа провайдера или оценка по каталогу
+  fxRate          Decimal?    @db.Decimal(10, 4)
+  fxRateDate      DateTime?   @db.Date // [v2] какого числа курс — ЦБ не публикует по выходным
+  // [v2] Было Decimal вопреки принципу «деньги — целые числа».
+  costRubKopecks  Int?
+
+  // --- Надёжность ---
+  attempt      Int     @default(1)
+  isFallback   Boolean @default(false)
+  parentId     String? @db.Uuid
+  batchId      String? @db.Uuid
+  errorCode    String?
+  errorMessage String?
+
+  // [v2] Поллинг с экспоненциальным бэкоффом вместо фиксированных 10 секунд
+  // для всех задач: лишний трафик в туннеле и лишняя нагрузка на провайдера.
+  nextPollAt   DateTime?
+  pollAttempts Int       @default(0)
+
+  queuedAt   DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+  latencyMs  Int?
+
+  outputs     Output[]
+  moderations Moderation[]
+  callbacks   ProviderCallback[]
+
+  @@unique([userId, idempotencyKey]) // [v2] было глобально уникальным
+  @@index([userId, queuedAt])
+  @@index([status, queuedAt])
+  @@index([status, nextPollAt]) // [v2] выборка задач для поллинга
+  @@index([provider, finishedAt])
+  @@index([batchId])
+  @@index([pipelineRunId])
+}
+
+enum GenerationStatus {
+  PENDING // создана, холд поставлен
+  QUEUED // в очереди воркера
+  PROCESSING // отправлена провайдеру
+  SUBMIT_UNKNOWN // [v2] обрыв на submit: неизвестно, создана ли задача у провайдера.
+  // Слепой ретрай здесь = двойная оплата. Только реконсиляция.
+  DEFERRED // [v2] egress недоступен: кредиты в холде, задача ждёт
+  SUCCESS
+  ERROR
+  BLOCKED // [v2] отклонено модерацией, кредиты не списаны
+  CANCELED
+  REFUNDED
+}
+
+enum CostSource {
+  PROVIDER // цена из ответа провайдера
+  ESTIMATE // Model.expectedCostUsd, провайдер цену не отдал
+}
+
+// [v2] Логический результат. В v1 Output содержал один storageKey,
+// но в продукте одновременно нужны мастер, вотермаркнутая версия,
+// превью и миниатюра. Иначе лента истории отдаёт на мобильный трафик
+// оригиналы 4K — это и деньги за трафик S3, и мёртвый интерфейс.
+model Output {
+  id           String     @id @default(uuid()) @db.Uuid
+  generationId String     @db.Uuid
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  index       Int  @default(0)
+  width       Int?
+  height      Int?
+  durationSec Int?
+
+  isFavorite   Boolean   @default(false)
+  downloadedAt DateTime?
+
+  // [v2] Срок хранения фиксируется при создании, а не вычисляется от текущего
+  // тарифа: иначе даунгрейд уничтожит архив платного пользователя следующей ночью.
+  // Апгрейд продлевает, даунгрейд даёт 30 дней грейса.
+  expiresAt DateTime?
+  deletedAt DateTime?
+
+  files OutputFile[]
+
+  createdAt DateTime @default(now())
+
+  @@index([generationId])
+  @@index([expiresAt])
+}
+
+model OutputFile {
+  id       String @id @default(uuid()) @db.Uuid
+  outputId String @db.Uuid
+  output   Output @relation(fields: [outputId], references: [id], onDelete: Cascade)
+
+  kind       OutputKind
+  storageKey String     @unique
+  mimeType   String
+  sizeBytes  Int?
+  width      Int?
+  height     Int?
+
+  createdAt DateTime @default(now())
+
+  @@unique([outputId, kind])
+}
+
+enum OutputKind {
+  MASTER // чистый оригинал; на FREE не подписывается
+  WATERMARKED // для бесплатного тарифа; апгрейд открывает мастер без перегенерации
+  PREVIEW // 1280 px
+  THUMB // 320/640 AVIF для ленты истории
+}
+
+// [v2] Уникальность стала составной: стадий модерации три (§14 ТЗ),
+// а @unique по generationId позволял сохранить только одну.
+model Moderation {
+  id           String     @id @default(uuid()) @db.Uuid
+  generationId String     @db.Uuid
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  stage        ModerationStage
+  verdict      ModerationVerdict
+  reason       String?
+  score        Decimal?          @db.Decimal(5, 4)
+  rules        Json?
+  rulesVersion String? // [v2] без версии правил разбор спорных случаев невозможен
+
+  createdAt DateTime @default(now())
+
+  @@unique([generationId, stage])
+}
+
+enum ModerationStage {
+  PROMPT
+  INPUT_IMAGE
+  OUTPUT
+}
+
+enum ModerationVerdict {
+  PASS
+  FLAG
+  BLOCK
+}
+
+// [v2] Сырой лог колбэков провайдеров — симметрично PaymentWebhook.
+// В v1 у платежей лог входящих событий был, у генераций — нет,
+// хотя разбирать инциденты приходится одинаково.
+model ProviderCallback {
+  id           String      @id @default(uuid()) @db.Uuid
+  generationId String?     @db.Uuid
+  generation   Generation? @relation(fields: [generationId], references: [id])
+
+  provider    Provider
+  tokenOk     Boolean
+  signatureOk Boolean?
+  sourceIp    String?
+  payload     Json
+
+  processed   Boolean   @default(false)
+  error       String?
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([generationId])
+  @@index([processed, receivedAt])
+}
+
+// ------------------------------------------------------------
+//  ИИ-консультант
+// ------------------------------------------------------------
+
+model ChatSession {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  title        String?
+  // [v2] Потолок стоимости диалога: консультант — тоже себестоимость
+  totalCostUsd Decimal @default(0) @db.Decimal(10, 6)
+
+  messages  ChatMessage[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([userId, updatedAt])
+}
+
+model ChatMessage {
+  id        String      @id @default(uuid()) @db.Uuid
+  sessionId String      @db.Uuid
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  role    ChatRole
+  content String
+
+  generationId String? @db.Uuid
+
+  provider  Provider?
+  modelId   String?
+  tokensIn  Int?
+  tokensOut Int?
+  costUsd   Decimal?  @db.Decimal(10, 6)
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// ------------------------------------------------------------
+//  Лимиты и защита бюджета
+// ------------------------------------------------------------
+
+// [v2] Стоп-кран. В v1 были лимиты на пользователя и контроль балансов
+// провайдеров, но не было общего потолка: одна ошибка в цикле могла
+// израсходовать весь предоплаченный баланс за ночь.
+// Читается перед постановкой задачи, кэш в Redis на 10 секунд.
+model SystemState {
+  id String @id @default("singleton")
+
+  dailyBudgetUsd Decimal  @default(50) @db.Decimal(10, 2)
+  dailySpentUsd  Decimal  @default(0) @db.Decimal(10, 2)
+  budgetDate     DateTime @db.Date
+
+  paidGenerationsEnabled Boolean @default(true)
+  guestModeEnabled       Boolean @default(true)
+  signupsEnabled         Boolean @default(true)
+
+  maintenanceMessage String?
+
+  updatedAt DateTime @updatedAt
+}
+
+// Дневной агрегат. Оперативные счётчики — в Redis по московской дате,
+// сюда пишется итог для аналитики и разбора инцидентов.
+model UsageDaily {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   Profile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  date            DateTime @db.Date // московская дата
+  generations     Int      @default(0)
+  creditsSpent    Int      @default(0)
+  costUsd         Decimal  @default(0) @db.Decimal(10, 6)
+  costRubKopecks  Int      @default(0) // [v2]
+  errors          Int      @default(0)
+  chatMessages    Int      @default(0)
+  goodwillRerolls Int      @default(0) // [v2] бесплатные перегенерации
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+// Гости до регистрации.
+// [v2] Одного отпечатка браузера недостаточно — он обходится инкогнито-окном.
+// Защита послойная: капча + отпечаток + IP + подсеть + ASN + глобальный
+// дневной потолок расходов на гостей (SystemState.guestModeEnabled).
+model GuestQuota {
+  id          String  @id @default(uuid()) @db.Uuid
+  fingerprint String  @unique
+  ip          String?
+  subnet      String? // /24 — от смены адреса внутри одной сети
+  asn         String?
+
+  used    Int     @default(0)
+  limit   Int     @default(2)
+  blocked Boolean @default(false)
+
+  captchaPassedAt DateTime?
+  // Профиль гостя: результаты переносятся в аккаунт при регистрации
+  guestProfileId  String?   @db.Uuid
+  convertedUserId String?   @db.Uuid
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime @updatedAt
+
+  @@index([ip])
+  @@index([subnet])
+  @@index([firstSeenAt]) // [v2] для очистки: в v1 таблица росла бесконечно
+}
+
+// [v2] Транзакционный outbox: уведомление пишется в одной транзакции
+// с бизнес-изменением. Иначе «коммит прошёл, уведомление потерялось»
+// и пользователь не узнаёт, что результат готов.
+model OutboxEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  type    String // generation.finished | generation.failed | quota.low
+  userId  String @db.Uuid
+  payload Json
+
+  channels Json // ["sse", "telegram", "email"]
+
+  status        DeliveryStatus @default(PENDING)
+  attempts      Int            @default(0)
+  lastError     String?
+  nextAttemptAt DateTime       @default(now())
+  deliveredAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([status, nextAttemptAt])
+  @@index([userId, createdAt])
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// [v2] SEO-страницы инструментов как данные: контент-редактор без релиза.
+// Основной канал привлечения (docs/06-marketing.md §2.1).
+model ToolPage {
+  id   String @id @default(uuid()) @db.Uuid
+  slug String @unique
+
+  h1          String
+  title       String
+  description String
+  bodyMd      String
+
+  recipeId String? @db.Uuid
+  faq      Json?
+
+  published Boolean @default(false)
+  views     Int     @default(0)
+  starts    Int     @default(0) // запуски инструмента
+  signups   Int     @default(0) // регистрации со страницы
+
+  updatedAt DateTime @updatedAt
+
+  @@index([published])
+}

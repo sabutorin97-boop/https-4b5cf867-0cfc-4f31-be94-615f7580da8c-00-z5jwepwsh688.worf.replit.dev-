@@ -1,0 +1,112 @@
+# ============================================================
+#  Caddy. В ТЗ v1 файл упоминался в структуре репозитория,
+#  но его не было — при этом именно он определяет, что из
+#  внутренних сервисов доступно из интернета.
+#
+#  Главное правило: наружу публикуются только явно перечисленные
+#  пути биллинга. Всё остальное, включая /internal/*, недоступно.
+#  Второй рубеж — billing-internal не подключён к сети edge
+#  и маршрута из интернета не имеет в принципе.
+# ============================================================
+
+{
+	email {$ACME_EMAIL}
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+}
+
+# ------------------------------------------------------------
+#  Публичный сайт
+# ------------------------------------------------------------
+
+{$PUBLIC_SITE_HOST} {
+	import security_headers
+	encode zstd gzip
+
+	# Вебхуки касс — единственный путь, ведущий в платёжный контур.
+	# Проверка подписи и IP выполняется в приложении; здесь только маршрут.
+	handle /webhooks/* {
+		reverse_proxy billing-public:3000
+	}
+
+	# SSO и публичные ручки биллинга
+	handle /auth/* {
+		reverse_proxy billing-public:3000
+	}
+	handle /api/public/* {
+		reverse_proxy billing-public:3000
+	}
+
+	# Внутренний API не публикуется никогда, ни временно, ни для отладки.
+	handle /internal/* {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy site:3000
+	}
+}
+
+# ------------------------------------------------------------
+#  Личный кабинет
+# ------------------------------------------------------------
+
+{$PUBLIC_APP_HOST} {
+	import security_headers
+	encode zstd gzip
+
+	# SSE: буферизация должна быть выключена, иначе события
+	# доходят пачками и «честный прогресс» перестаёт быть честным.
+	handle /api/events* {
+		reverse_proxy cabinet:3000 {
+			flush_interval -1
+			transport http {
+				response_header_timeout 24h
+			}
+		}
+	}
+
+	# Колбэки провайдеров. Аутентификация — токеном в пути
+	# и подписью провайдера, проверяется приложением (ТЗ v2 §9.1).
+	handle /api/callbacks/* {
+		reverse_proxy cabinet:3000
+	}
+
+	handle /internal/* {
+		respond 404
+	}
+
+	# Загрузки: лимит на периметре, до попадания в приложение
+	handle /api/upload* {
+		request_body {
+			max_size {$MAX_UPLOAD_SIZE_MB}MB
+		}
+		reverse_proxy cabinet:3000
+	}
+
+	handle {
+		reverse_proxy cabinet:3000
+	}
+}
+
+# ------------------------------------------------------------
+#  Примечание по рейт-лимиту
+#
+#  У Caddy нет встроенного rate limit. Варианты:
+#   1) сборка с модулем caddy-ratelimit (xcaddy) — предпочтительно;
+#   2) прикладной лимит по IP и userId в Fastify (обязателен в любом случае).
+#  Прикладной лимит нужен всегда: периметр защищает от шума,
+#  но лимиты тарифа и защита бюджета живут в приложении.
+# ------------------------------------------------------------

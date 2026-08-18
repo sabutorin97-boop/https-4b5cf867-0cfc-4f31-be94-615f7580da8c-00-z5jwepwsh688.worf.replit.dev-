@@ -1,0 +1,623 @@
+// ============================================================
+//  БИЛЛИНГОВЫЙ КОНТУР — источник истины по пользователям и деньгам
+//  Прямой выход в сеть, без туннеля. Внешние вызовы — только в кассы.
+//  Деньги — в копейках (Int), кредиты — целые (Int).
+//
+//  Версия 2. Изменения относительно v1 помечены [v2] с указанием причины.
+//  Разбор дефектов v1 — docs/01-review-v1.md
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("BILLING_DATABASE_URL")
+}
+
+// ------------------------------------------------------------
+//  Пользователи и доступ
+// ------------------------------------------------------------
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  email        String? @unique
+  phone        String? @unique
+  passwordHash String?
+  telegramId   BigInt? @unique
+  displayName  String?
+
+  // [v2] Приветственные кредиты выдаются только после подтверждения.
+  // Без этого бонус — приглашение к массовой регистрации ботов.
+  emailVerifiedAt DateTime?
+  phoneVerifiedAt DateTime?
+
+  // [v2] Фиксация принятия оферты и согласия на обработку ПДн (152-ФЗ).
+  // Нужны версия, момент и IP — иначе согласие недоказуемо.
+  consentVersion    String?
+  consentAcceptedAt DateTime?
+  consentIp         String?
+
+  role   UserRole   @default(CLIENT)
+  status UserStatus @default(ACTIVE)
+
+  // Реферальная механика. Вознаграждение — по первому платежу приглашённого,
+  // не по регистрации (см. docs/04-product.md §6).
+  referralCode String  @unique
+  referredById String? @db.Uuid
+  referredBy   User?   @relation("Referrals", fields: [referredById], references: [id])
+  referrals    User[]  @relation("Referrals")
+
+  // [v2] Метки первого касания — для сквозной аналитики воронки.
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+
+  wallet        Wallet?
+  transactions  Transaction[]
+  holds         Hold[]
+  payments      Payment[]
+  subscriptions Subscription[]
+  apiKeys       ApiKey[]
+  sessions      AuthSession[]
+  memberships   OrgMember[]
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  lastSeenAt DateTime?
+  deletedAt  DateTime? // [v2] мягкое удаление: финансовые записи удалять нельзя
+
+  @@index([referredById])
+  @@index([createdAt])
+}
+
+enum UserRole {
+  CLIENT
+  BUSINESS
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  DELETED
+}
+
+// Сессии для SSO между кассой и кабинетом.
+// Кабинет только проверяет подпись JWT, своей таблицы пользователей не имеет.
+model AuthSession {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // [v2] Хранится ТОЛЬКО хэш. В v1 refresh-токен лежал в открытом виде —
+  // утечка дампа означала захват всех живых сессий.
+  refreshTokenHash String  @unique
+  // [v2] Ротация: повторное использование отозванного токена инвалидирует всю цепочку.
+  familyId         String  @db.Uuid
+  replacedById     String? @db.Uuid
+
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([familyId])
+}
+
+model ApiKey {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId  String? @db.Uuid // [v2] ключ может принадлежать организации
+
+  name      String
+  keyHash   String @unique // хранится только хэш
+  keyPrefix String // первые символы для отображения
+
+  // [v2] Ключ без собственных лимитов — способ случайно потратить весь баланс скриптом.
+  scopes           Json?
+  rateLimitPerMin  Int   @default(60)
+  dailyCreditLimit Int?
+
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([orgId])
+}
+
+// ------------------------------------------------------------
+//  [v2] Организации — тариф BUSINESS обещает команды,
+//  но в v1 кошелёк был жёстко привязан к пользователю.
+// ------------------------------------------------------------
+
+model Organization {
+  id    String @id @default(uuid()) @db.Uuid
+  title String
+
+  // Реквизиты для счетов и закрывающих документов
+  inn        String?
+  kpp        String?
+  legalAddr  String?
+  signerName String?
+
+  members OrgMember[]
+  wallet  Wallet?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OrgMember {
+  id     String       @id @default(uuid()) @db.Uuid
+  orgId  String       @db.Uuid
+  org    Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  userId String       @db.Uuid
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role             OrgRole @default(MEMBER)
+  // Индивидуальный потолок на участника: общий кошелёк без него —
+  // способ потратить месячный бюджет отдела за вечер.
+  dailyCreditLimit Int?
+
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, userId])
+  @@index([userId])
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+// ------------------------------------------------------------
+//  Кошелёк, холды, транзакции
+// ------------------------------------------------------------
+
+// Баланс существует ТОЛЬКО здесь. Кабинет генераций его не дублирует.
+//
+// ВАЖНО для реализации: все изменения баланса выполняются ОДНИМ атомарным
+// условным UPDATE, без предварительного SELECT (см. ТЗ v2 §7.2):
+//
+//   UPDATE "Wallet" SET credits = credits - $1, "heldCredits" = "heldCredits" + $1,
+//          version = version + 1
+//    WHERE "userId" = $2 AND credits >= $1 RETURNING credits, "heldCredits";
+//
+// Ноль строк = INSUFFICIENT_FUNDS. balanceAfter берётся из RETURNING.
+model Wallet {
+  id String @id @default(uuid()) @db.Uuid
+
+  // [v2] Кошелёк принадлежит либо пользователю, либо организации.
+  // XOR-ограничение выражается CHECK-констрейнтом в миграции:
+  //   CHECK ((("userId" IS NOT NULL)::int + ("orgId" IS NOT NULL)::int) = 1)
+  userId String?       @unique @db.Uuid
+  user   User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orgId  String?       @unique @db.Uuid
+  org    Organization? @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  credits     Int @default(0) // доступно к трате
+  heldCredits Int @default(0) // зарезервировано под активные холды
+
+  // [v2] Разрешение уйти в минус — только для коммита просроченного холда
+  // и для возвратов по уже потраченным кредитам. Требует записи в AuditLog.
+  allowNegative Boolean @default(false)
+
+  version   Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
+}
+
+// Резерв кредитов на время генерации.
+// ACTIVE -> COMMITTED (успех) | RELEASED (ошибка) | EXPIRED (таймаут)
+//
+// [v2] Разрешён переход EXPIRED -> COMMITTED: генерация могла завершиться
+// после истечения TTL. Отдать оплаченный результат и уйти в минус дешевле,
+// чем раздавать генерации бесплатно (ТЗ v2 §8.2).
+//
+// [v2] TTL вычисляется вызывающим: model.timeoutSec * (maxAttempts + 1) + 300,
+// минимум 900. Фиксированные 900 секунд короче таймаута видеомоделей.
+model Hold {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  credits Int
+  status  HoldStatus @default(ACTIVE)
+
+  // [v2] Уникальность составная. Глобально уникальный ключ позволял бы
+  // одному пользователю занять ключ другого.
+  idempotencyKey String
+
+  // Свободная ссылка на объект в другом контуре (generationId либо pipelineRunId).
+  // Внешнего ключа нет намеренно — базы разные.
+  externalRef String?
+
+  expiresAt   DateTime
+  committedAt DateTime?
+  releasedAt  DateTime?
+  expiredAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  transactions Transaction[]
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, status])
+  @@index([status, expiresAt]) // для воркера, освобождающего протухшие холды
+  @@index([externalRef])
+}
+
+enum HoldStatus {
+  ACTIVE
+  COMMITTED
+  RELEASED
+  EXPIRED
+}
+
+// Неизменяемый журнал. Записи только добавляются, никогда не обновляются.
+//
+// Инварианты ночной сверки (ТЗ v2 §7.1):
+//   I1: Wallet.credits + Wallet.heldCredits == Σ Transaction.credits
+//   I2: Wallet.heldCredits                  == Σ Hold.credits WHERE status = ACTIVE
+// [v2] В v1 инвариант I1 был записан без heldCredits — в таком виде он ложен
+// при любом активном холде и давал бы критический алерт каждую ночь.
+model Transaction {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  type    TransactionType
+  credits Int // положительное — начисление, отрицательное — списание
+
+  // Снимок баланса ПОСЛЕ операции = credits + heldCredits.
+  // Берётся из RETURNING атомарного UPDATE, не отдельным чтением.
+  balanceAfter Int
+
+  holdId String? @db.Uuid
+  hold   Hold?   @relation(fields: [holdId], references: [id])
+
+  paymentId String?  @db.Uuid
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+
+  refundId String? @db.Uuid // [v2]
+
+  idempotencyKey String?
+  comment        String?
+  meta           Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, idempotencyKey]) // [v2] было глобально уникальным
+  @@index([userId, createdAt])
+  @@index([type, createdAt])
+}
+
+enum TransactionType {
+  TOPUP // пополнение оплатой
+  SUBSCRIPTION // начисление по подписке
+  BONUS // приветственные, компенсации
+  REFERRAL // реферальное вознаграждение
+  SPEND // списание за генерацию (при подтверждении холда)
+  REFUND // возврат за неудачную генерацию
+  GOODWILL // [v2] бесплатная перегенерация «не понравился результат»
+  ROLLOVER // [v2] перенос остатка кредитов подписки на новый период
+  CHARGEBACK // [v2] возврат платежа кассой
+  MANUAL // ручная корректировка администратором
+  EXPIRE // сгорание кредитов
+}
+
+// ------------------------------------------------------------
+//  Идемпотентность
+// ------------------------------------------------------------
+
+// [v2] В v1 идемпотентность описывалась словами «повтор возвращает результат
+// первой операции». Не были определены два неизбежных случая: параллельный
+// запрос с тем же ключом (оба вставляют — один падает на уникальном индексе)
+// и тот же ключ с другим телом (вернуть чужой результат = молча соврать).
+model IdempotencyRecord {
+  id String @id @default(uuid()) @db.Uuid
+
+  scope String // holds | commit | release | topup | grants | ...
+  key   String
+
+  // sha256 канонизированного тела: тот же ключ с другим телом → 422
+  requestHash String
+  state       IdempotencyState @default(IN_PROGRESS)
+
+  statusCode   Int?
+  responseJson Json?
+  error        String?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+  expiresAt   DateTime // TTL 30 суток, чистится фоновым заданием
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+}
+
+enum IdempotencyState {
+  IN_PROGRESS
+  DONE
+  FAILED
+}
+
+// ------------------------------------------------------------
+//  Платежи
+// ------------------------------------------------------------
+
+model Payment {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   User    @relation(fields: [userId], references: [id])
+  orgId  String? @db.Uuid
+
+  provider PaymentProvider
+
+  // [v2] Стало nullable: платёж создаётся в PENDING ДО обращения в кассу,
+  // идентификатора кассы в этот момент ещё не существует.
+  // В PostgreSQL уникальный индекс допускает несколько NULL — это здесь и нужно.
+  providerPaymentId String? @unique
+  idempotencyKey    String  @unique
+
+  amountKopecks Int
+  currency      String @default("RUB")
+  credits       Int
+
+  status PaymentStatus @default(PENDING)
+
+  isRecurrent     Boolean @default(false)
+  paymentMethodId String?
+
+  description String?
+
+  // [v2] 54-ФЗ: состав чека передаётся в кассу при создании платежа.
+  // Одного флага receiptSent недостаточно — нужно знать, что отправили и что ответили.
+  receipt       Json?
+  receiptStatus ReceiptStatus @default(PENDING)
+  receiptError  String?
+
+  rawPayload Json?
+
+  createdAt  DateTime  @default(now())
+  paidAt     DateTime?
+  canceledAt DateTime?
+
+  transactions Transaction[]
+  refunds      Refund[]
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@index([receiptStatus])
+}
+
+enum PaymentProvider {
+  YOOKASSA
+  TBANK
+  SBP
+  MANUAL // оплата по счёту для юрлиц, подтверждается вручную
+}
+
+enum PaymentStatus {
+  PENDING
+  WAITING_FOR_CAPTURE
+  SUCCEEDED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED // [v2]
+}
+
+enum ReceiptStatus {
+  PENDING
+  SENT
+  FAILED
+  NOT_REQUIRED
+}
+
+// [v2] Частичные возвраты неизбежны при спорах и чарджбэках,
+// а Payment.refundedAt их не выражает.
+model Refund {
+  id        String  @id @default(uuid()) @db.Uuid
+  paymentId String  @db.Uuid
+  payment   Payment @relation(fields: [paymentId], references: [id])
+
+  providerRefundId String?      @unique
+  amountKopecks    Int
+  credits          Int // сколько кредитов снимаем обратно
+  reason           String
+  status           RefundStatus @default(PENDING)
+
+  receiptStatus ReceiptStatus @default(PENDING) // чек возврата тоже обязателен
+
+  idempotencyKey String    @unique
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@index([paymentId])
+  @@index([status])
+}
+
+enum RefundStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+// Лог входящих вебхуков. Пишется ДО обработки.
+model PaymentWebhook {
+  id       String          @id @default(uuid()) @db.Uuid
+  provider PaymentProvider
+
+  // [v2] Было eventId String? с @@unique([provider, eventId]).
+  // В PostgreSQL два NULL не конфликтуют — защита от дублей не работала
+  // ни на одном событии без явного идентификатора.
+  // Стало: NOT NULL, значение = идентификатор события провайдера либо sha256(body).
+  eventKey String
+
+  signatureOk Boolean
+  sourceIp    String?
+  payload     Json
+  processed   Boolean @default(false)
+  attempts    Int     @default(0)
+  error       String?
+
+  receivedAt  DateTime  @default(now())
+  processedAt DateTime?
+
+  @@unique([provider, eventKey])
+  @@index([processed, receivedAt])
+}
+
+// ------------------------------------------------------------
+//  Тарифы и подписки
+// ------------------------------------------------------------
+
+model Plan {
+  id   String @id @default(uuid()) @db.Uuid
+  code String @unique // FREE, START, PRO, BUSINESS
+
+  title              String
+  priceKopecks       Int
+  annualPriceKopecks Int? // [v2] годовая оплата со скидкой — лучший инструмент против оттока
+  creditsPerCycle    Int
+  cycleDays          Int    @default(30)
+
+  // Ограничения тарифа
+  dailyCreditLimit   Int? // потолок трат в сутки; см. docs/04-product.md §3.3 —
+  // именно он делает тариф безубыточным в худшем сценарии
+  concurrentJobs     Int     @default(1)
+  queuePriority      Int     @default(0)
+  allowBatch         Boolean @default(false)
+  allowApi           Boolean @default(false)
+  allowPremiumModels Boolean @default(false)
+  allowRecipes       Boolean @default(false) // [v2]
+  watermark          Boolean @default(true)
+
+  // [v2] Продуктовые параметры, которых не было
+  creditRolloverCap     Int? // перенос остатка, не более месячного объёма
+  storageDays           Int? // null — бессрочно
+  goodwillRerollsPerDay Int  @default(0)
+  chatMessagesPerDay    Int  @default(15)
+  maxSeats              Int  @default(1)
+
+  isActive  Boolean @default(true)
+  sortOrder Int     @default(0)
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id     String  @id @default(uuid()) @db.Uuid
+  userId String  @db.Uuid
+  user   User    @relation(fields: [userId], references: [id])
+  orgId  String? @db.Uuid
+
+  planId String @db.Uuid
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  status SubscriptionStatus @default(ACTIVE)
+
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  autoRenew          Boolean  @default(true)
+  cancelAtPeriodEnd  Boolean  @default(false) // [v2]
+  paymentMethodId    String?
+
+  // [v2] Три попытки списания с растущим интервалом — состояние нужно хранить
+  failedAttempts Int       @default(0)
+  nextRetryAt    DateTime?
+
+  // [v2] Версия для profile-sync: кабинет игнорирует события старее применённого
+  version Int @default(0)
+
+  canceledAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId, status])
+  @@index([status, currentPeriodEnd])
+  @@index([status, nextRetryAt])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+// ------------------------------------------------------------
+//  [v2] Гарантированная доставка исходящих уведомлений
+// ------------------------------------------------------------
+
+// profile-sync в v1 был fire-and-forget. Потерянное уведомление означает,
+// что пользователь оплатил PRO и не получил его. Транзакционный outbox:
+// запись создаётся в одной транзакции с бизнес-изменением.
+model WebhookDelivery {
+  id String @id @default(uuid()) @db.Uuid
+
+  target  String // profile-sync | telegram-alert | email
+  payload Json
+
+  status    DeliveryStatus @default(PENDING)
+  attempts  Int            @default(0)
+  lastError String?
+
+  nextAttemptAt DateTime  @default(now())
+  deliveredAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([status, nextAttemptAt])
+}
+
+enum DeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+// ------------------------------------------------------------
+//  Служебное
+// ------------------------------------------------------------
+
+// [v2] История ночных сверок: нужен не только алерт, но и история —
+// по ней видно, когда расхождение появилось впервые.
+model ReconciliationRun {
+  id String @id @default(uuid()) @db.Uuid
+
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  walletsChecked Int     @default(0)
+  mismatches     Int     @default(0)
+  details        Json?
+  ok             Boolean @default(false)
+
+  @@index([startedAt])
+}
+
+model AuditLog {
+  id       String  @id @default(uuid()) @db.Uuid
+  actorId  String? @db.Uuid
+  action   String
+  entity   String
+  entityId String?
+  before   Json?
+  after    Json?
+  ip       String?
+  traceId  String? // [v2] сквозная связь с логами
+
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt]) // [v2]
+  @@index([createdAt])
+}

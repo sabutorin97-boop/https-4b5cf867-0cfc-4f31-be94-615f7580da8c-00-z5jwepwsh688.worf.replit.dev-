@@ -1,0 +1,492 @@
+# ============================================================
+#  Инфраструктура сервиса генерации. Версия 2.
+#
+#  Ключевые изменения относительно v1 (docs/01-review-v1.md):
+#   * billing разделён на два контейнера: внутренний API физически
+#     недоступен из интернета, а не «по договорённости»
+#   * worker и bot убраны из сети периметра — входящих у них нет
+#   * отдельные Redis для биллинга и генераций: очередь не должна
+#     вытеснять данные платёжного контура
+#   * egress с kill switch: при падении туннеля трафик не уходит
+#     с российского IP, а не уходит вообще
+#   * бэкапы, миграции отдельным контейнером, ротация логов,
+#     healthcheck и лимиты ресурсов на всех сервисах
+#
+#  Правило прежнее: egress НЕ является маршрутом по умолчанию.
+#  Прокси применяется точечно в packages/shared/http (ТЗ v2 §4.3).
+# ============================================================
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-defaults: &defaults
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+  environment: &common-env
+    NODE_ENV: ${NODE_ENV:-production}
+    LOG_LEVEL: ${LOG_LEVEL:-info}
+    TZ: ${TZ:-Europe/Moscow}
+
+services:
+
+  # ---------- Прокси и TLS ----------
+
+  caddy:
+    <<: *defaults
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      site: { condition: service_healthy }
+      cabinet: { condition: service_healthy }
+      billing-public: { condition: service_healthy }
+
+  # ---------- Миграции ----------
+  # Одноразовый контейнер: миграции обеих баз накатываются ДО старта приложений.
+  # В v1 стратегии миграций не было вовсе — два одновременно стартующих
+  # инстанса гонялись бы за одной схемой.
+
+  migrator:
+    build:
+      context: ..
+      dockerfile: infra/migrator/Dockerfile
+    restart: "no"
+    logging: *logging
+    environment:
+      <<: *common-env
+      BILLING_DATABASE_URL: ${BILLING_DATABASE_URL}
+      GENERATION_DATABASE_URL: ${GENERATION_DATABASE_URL}
+    networks: [internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # ---------- ПЛАТЁЖНЫЙ КОНТУР ----------
+
+  site:
+    <<: *defaults
+    build: ../apps/web
+    environment:
+      <<: *common-env
+      BILLING_INTERNAL_URL: http://billing-internal:3100
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET}
+      NEXT_PUBLIC_APP_URL: ${PUBLIC_APP_URL}
+      NEXT_PUBLIC_SMARTCAPTCHA_KEY: ${SMARTCAPTCHA_CLIENT_KEY}
+    networks: [edge, internal]
+    depends_on:
+      billing-internal: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 768M }
+
+  # Публичный биллинг: вебхуки касс, SSO, публичные ручки.
+  # Через Caddy доступны ТОЛЬКО пути, перечисленные в Caddyfile.
+  billing-public:
+    <<: *defaults
+    build: ../apps/billing
+    environment: &billing-env
+      <<: *common-env
+      BILLING_MODE: public
+      PORT: 3000
+      BILLING_DATABASE_URL: ${BILLING_DATABASE_URL}
+      REDIS_URL: redis://redis-billing:6379/0
+      JWT_PRIVATE_KEY_B64: ${JWT_PRIVATE_KEY_B64}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64}
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      SERVICE_TOKEN_PREVIOUS: ${SERVICE_TOKEN_PREVIOUS:-}
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET}
+      CABINET_INTERNAL_URL: http://cabinet:3000
+      YOOKASSA_SHOP_ID: ${YOOKASSA_SHOP_ID}
+      YOOKASSA_SECRET_KEY: ${YOOKASSA_SECRET_KEY}
+      YOOKASSA_ALLOWED_IPS: ${YOOKASSA_ALLOWED_IPS}
+      TBANK_TERMINAL_KEY: ${TBANK_TERMINAL_KEY}
+      TBANK_PASSWORD: ${TBANK_PASSWORD}
+      ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN}
+      ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID}
+    networks: [edge, internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis-billing: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  # Внутренний API биллинга: /internal/v1/*.
+  # НЕ подключён к сети edge — маршрута из интернета не существует.
+  # В v1 billing был в сети web, и один секрет отделял интернет
+  # от балансов всех пользователей.
+  billing-internal:
+    <<: *defaults
+    build: ../apps/billing
+    environment:
+      <<: *billing-env
+      BILLING_MODE: internal
+      PORT: 3100
+    networks: [internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis-billing: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3100/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  # ---------- КОНТУР ГЕНЕРАЦИЙ ----------
+
+  cabinet:
+    <<: *defaults
+    build: ../apps/app
+    environment:
+      <<: *common-env
+      GENERATION_DATABASE_URL: ${GENERATION_DATABASE_URL}
+      REDIS_URL: redis://redis-gen:6379/0
+      BILLING_INTERNAL_URL: http://billing-internal:3100
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET}
+      JWT_PUBLIC_KEY_B64: ${JWT_PUBLIC_KEY_B64}
+      CALLBACK_SECRET: ${CALLBACK_SECRET}
+      SMARTCAPTCHA_SERVER_KEY: ${SMARTCAPTCHA_SERVER_KEY}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      S3_SIGNED_URL_TTL_SEC: ${S3_SIGNED_URL_TTL_SEC}
+    # Кабинет отдаёт интерфейс браузерам и принимает колбэки провайдеров.
+    # Наружу к провайдерам ходит только worker — прокси кабинету не нужен.
+    networks: [edge, internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis-gen: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { memory: 1G }
+
+  worker:
+    <<: *defaults
+    build: ../apps/worker
+    environment:
+      <<: *common-env
+      GENERATION_DATABASE_URL: ${GENERATION_DATABASE_URL}
+      REDIS_URL: redis://redis-gen:6379/0
+      BILLING_INTERNAL_URL: http://billing-internal:3100
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET}
+      # Единственное место, где включается туннель.
+      # Применяется точечно через packages/shared/http, не глобально.
+      EGRESS_PROXY_URL: http://egress:8888
+      KIE_API_KEY: ${KIE_API_KEY}
+      KIE_BASE_URL: ${KIE_BASE_URL}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL}
+      GENAPI_API_KEY: ${GENAPI_API_KEY}
+      GENAPI_BASE_URL: ${GENAPI_BASE_URL}
+      CALLBACK_SECRET: ${CALLBACK_SECRET}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      PUBLIC_CALLBACK_URL: ${PUBLIC_APP_URL}/api/callbacks
+      CLAMAV_HOST: clamav
+    # [v2] Сеть edge убрана: входящих соединений у воркера нет,
+    # колбэки принимает кабинет. Лишняя сеть — лишний путь в обход туннеля.
+    networks: [internal, egress_net]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis-gen: { condition: service_healthy }
+      egress: { condition: service_healthy }
+      migrator: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    # Успеть доработать задачу и корректно снять холд
+    stop_grace_period: 120s
+    deploy:
+      resources:
+        limits: { memory: 1536M }
+
+  bot:
+    <<: *defaults
+    build: ../apps/bot
+    environment:
+      <<: *common-env
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET}
+      GENERATION_DATABASE_URL: ${GENERATION_DATABASE_URL}
+      REDIS_URL: redis://redis-gen:6379/0
+      BILLING_INTERNAL_URL: http://billing-internal:3100
+      SERVICE_TOKEN: ${SERVICE_TOKEN}
+      SERVICE_HMAC_SECRET: ${SERVICE_HMAC_SECRET}
+    # Telegram доступен исходящим из internal — сеть edge не нужна.
+    networks: [internal]
+    depends_on:
+      cabinet: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  # ---------- EGRESS ----------
+  # WireGuard-клиент + HTTP-прокси. Слушает только во внутренней сети.
+  # Kill switch обязателен: при падении туннеля запросы не должны уходить
+  # с российского IP — это прямой путь к бану аккаунта с предоплатой.
+
+  egress:
+    <<: *defaults
+    build: ./egress
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      <<: *common-env
+      WG_MTU: "1380" # без явного MTU часть TLS-соединений виснет
+    volumes:
+      - ./egress/wg0.conf:/etc/wireguard/wg0.conf:ro
+      - ./egress/wg1.conf:/etc/wireguard/wg1.conf:ro # резервный пир
+    networks: [egress_net]
+    healthcheck:
+      # Проверяем доступность провайдера через прокси, а не состояние интерфейса
+      test: ["CMD-SHELL", "curl -sf -x http://127.0.0.1:8888 https://api.kie.ai/ -o /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits: { memory: 256M }
+
+  # ---------- ДАННЫЕ ----------
+
+  postgres:
+    <<: *defaults
+    image: postgres:16-alpine
+    environment:
+      <<: *common-env
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      BILLING_DB_PASSWORD: ${BILLING_DB_PASSWORD}
+      GENERATION_DB_PASSWORD: ${GENERATION_DB_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - max_connections=120
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=/bin/true
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # Создаёт две базы И две роли: роль генераций не имеет прав
+      # на базу биллинга, и наоборот. В v1 роль была одна на обе базы.
+      - ./postgres/init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 2560M }
+
+  # [v2] Два Redis вместо одного. В v1 очередь генераций и данные биллинга
+  # делили инстанс с maxmemory-policy noeviction: переполнение очередью
+  # останавливало и платёжный контур тоже.
+  redis-billing:
+    <<: *defaults
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    volumes:
+      - redis_billing_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 384M }
+
+  redis-gen:
+    <<: *defaults
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
+    volumes:
+      - redis_gen_data:/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 640M }
+
+  # [v2] Антивирус заявлен в §18 ТЗ v1, но контейнера не было.
+  clamav:
+    <<: *defaults
+    image: clamav/clamav:stable
+    volumes:
+      - clamav_data:/var/lib/clamav
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "clamdcheck.sh || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+    deploy:
+      resources:
+        limits: { memory: 1536M }
+
+  # ---------- БЭКАПЫ ----------
+  # [v2] В v1 бэкапов не было вообще. Для сервиса, где база — единственный
+  # источник истины по деньгам, это единственный нерешаемый отказ.
+
+  backup:
+    <<: *defaults
+    build: ./backup
+    environment:
+      <<: *common-env
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      BACKUP_S3_ENDPOINT: ${BACKUP_S3_ENDPOINT}
+      BACKUP_S3_BUCKET: ${BACKUP_S3_BUCKET}
+      BACKUP_S3_ACCESS_KEY: ${BACKUP_S3_ACCESS_KEY}
+      BACKUP_S3_SECRET_KEY: ${BACKUP_S3_SECRET_KEY}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY}
+      BACKUP_FULL_CRON: "0 4 * * *"
+      BACKUP_RETENTION_DAYS: "30"
+    volumes:
+      - pg_backup:/var/lib/pgbackrest
+    networks: [internal]
+    depends_on:
+      postgres: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  # ---------- РАЗРАБОТКА И ТЕСТЫ ----------
+  # Сценарии отказа провайдера нельзя проверять на живом kie.ai,
+  # а именно они определяют, теряет ли сервис деньги.
+
+  provider-mock:
+    <<: *defaults
+    build: ../packages/providers/mock
+    profiles: [dev]
+    environment:
+      <<: *common-env
+      MOCK_LATENCY_MS: "2000"
+      MOCK_ERROR_RATE: "0.1"
+      MOCK_DUPLICATE_CALLBACKS: "true"
+    networks: [internal, egress_net]
+
+  # ---------- НАБЛЮДАЕМОСТЬ ----------
+  # Профиль observability: на 8 ГБ включать осознанно либо
+  # использовать внешний сбор метрик.
+
+  prometheus:
+    <<: *defaults
+    image: prom/prometheus:latest
+    profiles: [observability]
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prom_data:/prometheus
+    networks: [internal]
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  grafana:
+    <<: *defaults
+    image: grafana/grafana:latest
+    profiles: [observability]
+    environment:
+      <<: *common-env
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks: [internal, edge]
+    deploy:
+      resources:
+        limits: { memory: 384M }
+
+networks:
+  # Периметр: только то, к чему ходит Caddy
+  edge:
+    driver: bridge
+  # Межсервисное взаимодействие и данные
+  internal:
+    driver: bridge
+  # Единственный путь к провайдерам
+  egress_net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  pg_backup:
+  redis_billing_data:
+  redis_gen_data:
+  clamav_data:
+  caddy_data:
+  caddy_config:
+  prom_data:
+  grafana_data:
