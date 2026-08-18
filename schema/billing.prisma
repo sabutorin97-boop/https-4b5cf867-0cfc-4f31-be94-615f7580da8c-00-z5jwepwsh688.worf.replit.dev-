@@ -42,12 +42,25 @@ model User {
   role   UserRole   @default(CLIENT)
   status UserStatus @default(ACTIVE)
 
-  // Реферальная механика. Вознаграждение — по первому платежу приглашённого,
-  // не по регистрации (см. docs/04-product.md §6).
+  // Реферальная механика: пользователь приводит пользователя, вознаграждение
+  // кредитами по первому платежу приглашённого (docs/09-partners.md §2).
   referralCode String  @unique
   referredById String? @db.Uuid
   referredBy   User?   @relation("Referrals", fields: [referredById], references: [id])
   referrals    User[]  @relation("Referrals")
+
+  // [v2] Партнёрская атрибуция: внешний партнёр приводит клиента, вознаграждение
+  // деньгами (docs/09-partners.md §3). Закрепляется в момент регистрации и после
+  // этого не меняется — иначе партнёры перехватывают чужих клиентов ретаргетингом
+  // на брендовый запрос. Промокод при ПЕРВОЙ оплате перебивает ссылочную атрибуцию.
+  partnerId         String?            @db.Uuid
+  attributedPartner Partner?           @relation("PartnerClients", fields: [partnerId], references: [id])
+  attributionSource AttributionSource?
+  attributedAt      DateTime?
+  attributionEndsAt DateTime? // 12 месяцев от первой оплаты
+  promoCodeUsed     String?
+
+  partnerAccount Partner? @relation("PartnerOwner")
 
   // [v2] Метки первого касания — для сквозной аналитики воронки.
   utmSource   String?
@@ -69,6 +82,7 @@ model User {
   deletedAt  DateTime? // [v2] мягкое удаление: финансовые записи удалять нельзя
 
   @@index([referredById])
+  @@index([partnerId])
   @@index([createdAt])
 }
 
@@ -393,6 +407,7 @@ model Payment {
 
   transactions Transaction[]
   refunds      Refund[]
+  commissions  PartnerCommission[]
 
   @@index([userId, createdAt])
   @@index([status])
@@ -474,6 +489,225 @@ model PaymentWebhook {
 
   @@unique([provider, eventKey])
   @@index([processed, receivedAt])
+}
+
+// ------------------------------------------------------------
+//  [v2] ПАРТНЁРСКАЯ ПРОГРАММА
+//
+//  В v1 были поля referralCode и referredById — то есть заготовка под
+//  реферальную механику «пользователь приводит пользователя». Партнёрской
+//  программы (внешний партнёр приводит клиентов и получает деньгами) не было
+//  вовсе, хотя в маркетинге партнёрства названы самым дешёвым каналом.
+//
+//  Программа живёт в платёжном контуре: она работает с деньгами.
+//  Полное описание, ставки, атрибуция и антифрод — docs/09-partners.md
+// ------------------------------------------------------------
+
+enum AttributionSource {
+  PROMO_CODE // введён при регистрации или первой оплате — приоритет высший
+  LINK // переход по ?ref=CODE, окно 30 дней до регистрации
+  MANUAL // закреплено вручную по договору
+}
+
+model Partner {
+  id String @id @default(uuid()) @db.Uuid
+
+  // Партнёр — это всегда и пользователь сервиса: кабинет партнёра живёт
+  // внутри обычного аккаунта.
+  userId String @unique @db.Uuid
+  user   User   @relation("PartnerOwner", fields: [userId], references: [id])
+
+  title  String
+  status PartnerStatus @default(PENDING)
+  tier   PartnerTier   @default(BASE)
+
+  // Ставка хранится на партнёре, а не выводится из уровня: индивидуальные
+  // условия по договору должны переживать пересчёт уровней.
+  commissionPercent Int @default(20)
+
+  // --- Реквизиты. Платим ТОЛЬКО самозанятым, ИП и юрлицам: выплата
+  // физлицу без статуса делает сервис налоговым агентом (НДФЛ, взносы,
+  // отчётность), что несоразмерно доходу от канала.
+  legalForm     PartnerLegalForm?
+  inn           String?
+  payoutDetails Json? // карта / расчётный счёт, шифруется на уровне приложения
+  // Статус самозанятого можно утратить — проверяется перед КАЖДОЙ выплатой
+  npdCheckedAt  DateTime?
+  npdValid      Boolean           @default(false)
+
+  // Принятие партнёрского договора-оферты: версия, момент, IP
+  contractVersion    String?
+  contractAcceptedAt DateTime?
+  contractIp         String?
+
+  // Агрегаты для кабинета и для расчёта уровня.
+  // Уровень считается по ПОДТВЕРЖДЁННЫМ платежам, а не по регистрациям —
+  // иначе он накручивается пустыми аккаунтами.
+  clientsTotal  Int @default(0)
+  clientsPaying Int @default(0)
+  earnedKopecks Int @default(0)
+  paidKopecks   Int @default(0)
+
+  blockedReason String?
+  blockedAt     DateTime?
+
+  clients     User[]              @relation("PartnerClients")
+  promoCodes  PromoCode[]
+  clicks      PartnerClick[]
+  commissions PartnerCommission[]
+  payouts     Payout[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+enum PartnerStatus {
+  PENDING // заявка подана, реквизиты не подтверждены
+  ACTIVE
+  SUSPENDED // подозрение на фрод, начисления заморожены
+  BLOCKED
+}
+
+enum PartnerTier {
+  BASE // 20 %
+  ADVANCED // 25 %, от 50 платящих клиентов
+  STRATEGIC // 30 %, от 200 клиентов либо индивидуальный договор
+}
+
+enum PartnerLegalForm {
+  SELF_EMPLOYED // самозанятый, НПД
+  IE // ИП
+  COMPANY // юрлицо
+}
+
+// Промокод партнёра. Даёт клиенту бонусные кредиты, а не скидку:
+// курс кредита остаётся 1:1, меняется только объём (docs/08-monetization.md §2.1).
+model PromoCode {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  partnerId String?  @db.Uuid
+  partner   Partner? @relation(fields: [partnerId], references: [id])
+
+  bonusPercent Int @default(10) // прибавка к купленным кредитам
+
+  maxUses    Int?
+  usedCount  Int       @default(0)
+  validFrom  DateTime  @default(now())
+  validUntil DateTime?
+  enabled    Boolean   @default(true)
+
+  createdAt DateTime @default(now())
+
+  @@index([partnerId])
+  @@index([enabled, validUntil])
+}
+
+// Сырые переходы по партнёрской ссылке. Нужны не для статистики,
+// а для антифрода: переходы без просмотров и аномальная конверсия —
+// признак cookie stuffing.
+model PartnerClick {
+  id        String  @id @default(uuid()) @db.Uuid
+  partnerId String  @db.Uuid
+  partner   Partner @relation(fields: [partnerId], references: [id])
+
+  ip        String?
+  userAgent String?
+  referer   String?
+  landing   String?
+
+  // Заполняется, если переход привёл к регистрации
+  convertedUserId String?   @db.Uuid
+  convertedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([partnerId, createdAt])
+  @@index([ip])
+}
+
+// Начисление с конкретного платежа.
+//
+// Комиссия подтверждается через 14 дней — это окно возврата и оспаривания.
+// Выплатить раньше, чем платёж стал безотзывным, значит заплатить дважды:
+// клиенту при возврате и партнёру, с которого деньги уже не вернуть.
+// Именно эта конструкция, а не детекторы, обесценивает большинство схем фрода.
+model PartnerCommission {
+  id        String  @id @default(uuid()) @db.Uuid
+  partnerId String  @db.Uuid
+  partner   Partner @relation(fields: [partnerId], references: [id])
+
+  paymentId String  @db.Uuid
+  payment   Payment @relation(fields: [paymentId], references: [id])
+  clientId  String  @db.Uuid
+
+  // Снимок условий на момент начисления: изменение ставки не должно
+  // задним числом переписывать уже начисленное.
+  ratePercent          Int
+  paymentAmountKopecks Int
+  amountKopecks        Int
+
+  status       CommissionStatus @default(PENDING)
+  availableAt  DateTime // начислено + 14 дней
+  rejectReason String?
+
+  payoutId String? @db.Uuid
+  payout   Payout? @relation(fields: [payoutId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  approvedAt DateTime?
+
+  // Один платёж — одна комиссия. Защита от повторного начисления
+  // при переигрывании вебхука кассы.
+  @@unique([paymentId])
+  @@index([partnerId, status])
+  @@index([status, availableAt])
+}
+
+enum CommissionStatus {
+  PENDING // ждёт истечения окна возврата
+  APPROVED // готова к выплате
+  REJECTED // возврат, чарджбэк или нарушение правил
+  PAID
+}
+
+// Выплата за период. Порог 5 000 ₽: перевод на 300 ₽ дороже в сопровождении,
+// чем сам перевод. Документ со списком комиссий обязателен — без него
+// разбор «почему в этом месяце меньше» превращается в переписку.
+model Payout {
+  id        String  @id @default(uuid()) @db.Uuid
+  partnerId String  @db.Uuid
+  partner   Partner @relation(fields: [partnerId], references: [id])
+
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+
+  amountKopecks Int
+  status        PayoutStatus @default(PENDING)
+  method        String?
+
+  // Партнёр по НПД выдаёт чек на каждую выплату: без чека расход не подтверждён
+  npdReceiptUrl String?
+  externalRef   String?
+  error         String?
+
+  idempotencyKey String @unique
+
+  commissions PartnerCommission[]
+
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([partnerId, createdAt])
+  @@index([status])
+}
+
+enum PayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
 }
 
 // ------------------------------------------------------------
