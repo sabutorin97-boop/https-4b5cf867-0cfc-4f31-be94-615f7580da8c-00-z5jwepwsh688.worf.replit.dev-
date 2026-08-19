@@ -82,12 +82,16 @@ jobs:
 
       - name: Проверить, что сайт отвечает
         env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
+          # Проверяем по домену, а не по IP: nginx отдаёт сайт по server_name,
+          # и запрос по адресу сервера в него просто не попадёт.
+          SITE: https://xn-----6kcboc8akc1afejndhfd0clr.xn--p1ai/
         run: |
-          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://$SSH_HOST/" || echo 000)"
-          echo "Сервер ответил кодом $code"
+          code="$(curl -sL -o /dev/null -w '%{http_code}' --max-time 25 "$SITE" || echo 000)"
+          echo "Сайт ответил кодом $code"
           if [ "$code" = "200" ]; then
-            echo "Сайт выложен и отвечает."
+            title="$(curl -sL --max-time 25 "$SITE" | grep -o '<title>[^<]*' | head -1 | cut -c8-)"
+            echo "Открывается: $title"
           else
-            echo "Файлы скопированы, но сервер ответил $code — проверьте nginx на сервере."
+            echo "Файлы скопированы, но сайт ответил $code."
+            echo "Проверьте на сервере: nginx -t && systemctl status nginx"
           fi
