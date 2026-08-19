@@ -1,0 +1,81 @@
+# Выкладывает сайт на хостинг Timeweb при каждом изменении в ветке main.
+#
+# Перед первым запуском добавьте в репозиторий четыре секрета:
+#   Settings → Secrets and variables → Actions → New repository secret
+#
+#   FTP_HOST      — адрес FTP-сервера из панели Timeweb, например ftp.example.ru
+#   FTP_USER      — логин FTP
+#   FTP_PASSWORD  — пароль FTP
+#   FTP_DIR       — каталог сайта на сервере, обычно /public_html
+#
+# Запустить выкладку вручную можно во вкладке Actions кнопкой «Run workflow».
+
+name: Выкладка на Timeweb
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Загрузить файлы на сервер
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Забрать код
+        uses: actions/checkout@v4
+
+      - name: Собрать то, что уходит на сервер
+        run: |
+          mkdir -p dist
+          cp index.html styles.css script.js privacy.html favicon.svg send.php dist/
+          echo "На сервер уйдут файлы:"
+          ls -1 dist
+
+      - name: Установить lftp
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends lftp
+
+      - name: Проверить, что секреты заполнены
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          missing=""
+          [ -z "$FTP_HOST" ] && missing="$missing FTP_HOST"
+          [ -z "$FTP_USER" ] && missing="$missing FTP_USER"
+          [ -z "$FTP_PASSWORD" ] && missing="$missing FTP_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "Не заданы секреты:$missing"
+            echo "Добавьте их в Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Выложить по FTP
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USER }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          # Если секрет не задан, кладём в /public_html — стандартный каталог Timeweb
+          FTP_DIR: ${{ secrets.FTP_DIR || '/public_html' }}
+        run: |
+          # ssl:verify-certificate no — у хостингов часто самоподписанный сертификат.
+          # Соединение при этом всё равно шифруется, если сервер умеет FTPS.
+          #
+          # Ключ --delete намеренно не используется: в каталоге сайта могут лежать
+          # чужие файлы, и стирать их автоматически опасно. Если нужна полная
+          # синхронизация — допишите --delete в строку mirror ниже.
+          lftp -c "
+            set ssl:verify-certificate no;
+            set net:max-retries 3;
+            set net:timeout 20;
+            open -u '$FTP_USER','$FTP_PASSWORD' '$FTP_HOST';
+            mirror --reverse --verbose --parallel=2 dist/ '$FTP_DIR';
+            bye;
+          "
+
+      - name: Готово
+        run: echo "Файлы загружены в ${{ secrets.FTP_DIR || '/public_html' }}"
