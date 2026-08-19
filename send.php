@@ -1,32 +1,54 @@
 <?php
 /**
- * Приём заявок с лендинга и отправка их на почту.
+ * Приём заявок с лендинга.
  *
- * Нужен только если хостинг умеет PHP (обычный виртуальный хостинг Timeweb — умеет).
- * После заливки на сервер откройте script.js и укажите:
- *     FORM_ENDPOINT: "/send.php"
+ * Работает в два шага:
+ *   1. записывает заявку в журнал на диске — это происходит всегда;
+ *   2. пытается отправить письмо, если настроен SMTP.
  *
- * Заполните две константы ниже.
+ * Порядок именно такой: письмо может не уйти по десятку причин, а заявка
+ * клиента теряться не должна. Журнал лежит вне папки сайта, чтобы его
+ * нельзя было скачать из браузера.
+ *
+ * Настройки — в файле config.php рядом (см. config.sample.php).
+ * Без него сайт работает, просто письма не отправляются.
  */
 
 declare(strict_types=1);
 
-/** Куда приходят заявки. */
-const RECIPIENT = 'potolok-45@yandex.ru';
-
-/** От чьего имени уходит письмо. Обязательно адрес на вашем домене,
- *  иначе письмо уйдёт в спам или не отправится вовсе. */
-const SENDER = 'noreply@okna-profigrupp.ru';
-
-/** Минимальный интервал между заявками с одного адреса, секунды. */
 const THROTTLE_SECONDS = 20;
+
+$config = [
+    'recipient' => 'potolok-45@yandex.ru',
+    'leads_dir' => __DIR__ . '/../okna-leads',
+    'smtp'      => ['enabled' => false],
+];
+
+if (is_file(__DIR__ . '/config.php')) {
+    $loaded = require __DIR__ . '/config.php';
+    if (is_array($loaded)) {
+        $config = array_replace_recursive($config, $loaded);
+    }
+}
 
 header('Content-Type: application/json; charset=utf-8');
 
-if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
-    http_response_code(405);
-    echo json_encode(['ok' => false, 'error' => 'Метод не поддерживается'], JSON_UNESCAPED_UNICODE);
+function respond(bool $ok, string $error = '', int $code = 200): never
+{
+    http_response_code($code);
+    echo json_encode($error === '' ? ['ok' => $ok] : ['ok' => $ok, 'error' => $error], JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+/** Убирает переводы строк — защита от подстановки лишних почтовых заголовков. */
+function clean(string $value, int $limit = 200): string
+{
+    $value = str_replace(["\r", "\n", "\0"], ' ', $value);
+    return mb_substr(trim($value), 0, $limit);
+}
+
+if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+    respond(false, 'Метод не поддерживается', 405);
 }
 
 $raw  = file_get_contents('php://input') ?: '';
@@ -35,19 +57,10 @@ if (!is_array($data)) {
     $data = $_POST;
 }
 
-/* Ловушка для ботов: поле скрыто от людей, значит заполнить его мог только робот.
+/* Ловушка для ботов: поле скрыто от людей, заполнить его мог только робот.
    Отвечаем успехом, чтобы бот не искал обходной путь. */
 if (!empty($data['company'])) {
-    echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
-    exit;
-}
-
-/** Убирает переводы строк — защита от подстановки лишних почтовых заголовков. */
-function clean(string $value, int $limit = 200): string
-{
-    $value = str_replace(["\r", "\n", "\0"], ' ', $value);
-    $value = trim($value);
-    return mb_substr($value, 0, $limit);
+    respond(true);
 }
 
 $name  = clean((string)($data['name'] ?? ''), 100);
@@ -58,23 +71,19 @@ $text  = (string)($data['text'] ?? '');
 $digits = preg_replace('/\D/', '', $phone) ?? '';
 
 if (mb_strlen($name) < 2 || mb_strlen($digits) < 10) {
-    http_response_code(422);
-    echo json_encode(['ok' => false, 'error' => 'Проверьте имя и телефон'], JSON_UNESCAPED_UNICODE);
-    exit;
+    respond(false, 'Проверьте имя и телефон', 422);
 }
 
-/* Простое ограничение частоты — чтобы форму не залили сотней заявок разом. */
+/* Ограничение частоты — чтобы форму не залили сотней заявок разом. */
 $ip   = (string)($_SERVER['REMOTE_ADDR'] ?? 'unknown');
 $lock = sys_get_temp_dir() . '/lead-' . md5($ip) . '.lock';
 if (is_file($lock) && (time() - (int)filemtime($lock)) < THROTTLE_SECONDS) {
-    http_response_code(429);
-    echo json_encode(['ok' => false, 'error' => 'Слишком часто, попробуйте через минуту'], JSON_UNESCAPED_UNICODE);
-    exit;
+    respond(false, 'Слишком часто, попробуйте через минуту', 429);
 }
 @touch($lock);
 
-/* Тело письма. Если клиент прислал готовый текст — берём его,
-   иначе собираем сами из отдельных полей. */
+/* ---------------------------------------------------------------- текст */
+
 if ($text === '') {
     $lines = [
         'Заявка с сайта — подбор окон',
@@ -99,21 +108,134 @@ $text .= "\nИсточник: " . clean((string)($data['source'] ?? '—'), 300)
 $text .= "\nIP: " . $ip;
 $text .= "\nВремя: " . date('d.m.Y H:i');
 
-$subject = '=?UTF-8?B?' . base64_encode('Заявка на замер — ' . $name . ', ' . $phone) . '?=';
+/* ------------------------------------------------------- журнал заявок */
 
-$headers = implode("\r\n", [
-    'From: =?UTF-8?B?' . base64_encode('Сайт «Окна Профигрупп»') . '?= <' . SENDER . '>',
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: 8bit',
-    'MIME-Version: 1.0',
-]);
+$saved = false;
+$dir = (string)$config['leads_dir'];
 
-$sent = @mail(RECIPIENT, $subject, $text, $headers, '-f' . SENDER);
-
-if (!$sent) {
-    http_response_code(500);
-    echo json_encode(['ok' => false, 'error' => 'Почта недоступна'], JSON_UNESCAPED_UNICODE);
-    exit;
+if (!is_dir($dir)) {
+    @mkdir($dir, 0770, true);
 }
 
-echo json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+if (is_dir($dir) && is_writable($dir)) {
+    $file  = rtrim($dir, '/') . '/' . date('Y-m') . '.txt';
+    $entry = str_repeat('=', 60) . "\n" . $text . "\n";
+    $saved = (bool)@file_put_contents($file, $entry, FILE_APPEND | LOCK_EX);
+}
+
+/* ------------------------------------------------------------- письмо */
+
+/**
+ * Отправка через SMTP на голых сокетах: на облачном сервере обычно нет
+ * почтовой программы, а функция mail() без неё молча ничего не делает.
+ */
+function smtp_send(array $s, string $to, string $subject, string $body): bool
+{
+    $host = (string)($s['host'] ?? '');
+    $port = (int)($s['port'] ?? 465);
+    if ($host === '') {
+        return false;
+    }
+
+    $address = $port === 465 ? 'ssl://' . $host : $host;
+    $socket = @fsockopen($address, $port, $errno, $errstr, 15);
+    if (!$socket) {
+        error_log("Заявка: SMTP недоступен ($errno $errstr)");
+        return false;
+    }
+    stream_set_timeout($socket, 15);
+
+    $read = static function () use ($socket): string {
+        $out = '';
+        while (($line = fgets($socket, 515)) !== false) {
+            $out .= $line;
+            if (strlen($line) < 4 || $line[3] !== '-') {
+                break;
+            }
+        }
+        return $out;
+    };
+
+    $say = static function (string $cmd, string $expect) use ($socket, $read): bool {
+        if ($cmd !== '') {
+            fwrite($socket, $cmd . "\r\n");
+        }
+        $answer = $read();
+        if (str_starts_with($answer, $expect)) {
+            return true;
+        }
+        error_log('Заявка: SMTP ответил «' . trim($answer) . '» на «' . explode(' ', $cmd)[0] . '»');
+        return false;
+    };
+
+    $ok = $say('', '220')
+        && $say('EHLO okna', '250');
+
+    // На порту 587 шифрование включается отдельной командой
+    if ($ok && $port !== 465) {
+        $ok = $say('STARTTLS', '220')
+            && @stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)
+            && $say('EHLO okna', '250');
+    }
+
+    $ok = $ok
+        && $say('AUTH LOGIN', '334')
+        && $say(base64_encode((string)($s['user'] ?? '')), '334')
+        && $say(base64_encode((string)($s['password'] ?? '')), '235')
+        && $say('MAIL FROM:<' . ($s['from'] ?? $s['user']) . '>', '250')
+        && $say('RCPT TO:<' . $to . '>', '250')
+        && $say('DATA', '354');
+
+    if ($ok) {
+        $from = (string)($s['from'] ?? $s['user']);
+        $fromName = '=?UTF-8?B?' . base64_encode((string)($s['from_name'] ?? 'Сайт')) . '?=';
+
+        $headers = [
+            'From: ' . $fromName . ' <' . $from . '>',
+            'To: <' . $to . '>',
+            'Subject: ' . $subject,
+            'Date: ' . date('r'),
+            'MIME-Version: 1.0',
+            'Content-Type: text/plain; charset=UTF-8',
+            'Content-Transfer-Encoding: base64',
+        ];
+
+        $letter = implode("\r\n", $headers) . "\r\n\r\n"
+            . chunk_split(base64_encode($body), 76, "\r\n");
+
+        fwrite($socket, $letter . "\r\n.\r\n");
+        $ok = $say('', '250');
+    }
+
+    $say('QUIT', '221');
+    fclose($socket);
+
+    return $ok;
+}
+
+$mailed = false;
+$smtp = is_array($config['smtp'] ?? null) ? $config['smtp'] : [];
+$subject = '=?UTF-8?B?' . base64_encode('Заявка на замер — ' . $name . ', ' . $phone) . '?=';
+
+if (!empty($smtp['enabled'])) {
+    $mailed = smtp_send($smtp, (string)$config['recipient'], $subject, $text);
+} elseif (function_exists('mail')) {
+    // Запасной путь для обычного хостинга, где почтовая программа уже есть
+    $headers = implode("\r\n", [
+        'Content-Type: text/plain; charset=UTF-8',
+        'Content-Transfer-Encoding: 8bit',
+        'MIME-Version: 1.0',
+    ]);
+    $mailed = @mail((string)$config['recipient'], $subject, $text, $headers);
+}
+
+/* ------------------------------------------------------------- ответ */
+
+// Заявка принята, если она хотя бы записана в журнал: письмо можно
+// отправить позже, а вот потерять обращение клиента нельзя.
+if ($saved || $mailed) {
+    respond(true);
+}
+
+error_log('Заявка: не удалось ни записать в журнал, ни отправить письмо');
+respond(false, 'Не получилось сохранить заявку', 500);

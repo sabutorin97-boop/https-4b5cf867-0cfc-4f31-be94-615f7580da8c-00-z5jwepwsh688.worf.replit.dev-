@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /privacy.html
+Disallow: /404.html
+Disallow: /send.php
+
+Sitemap: https://xn-----6kcboc8akc1afejndhfd0clr.xn--p1ai/sitemap.xml

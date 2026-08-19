@@ -1,16 +1,17 @@
-# Выкладывает сайт на хостинг Timeweb при каждом изменении в ветке main.
+# Выкладывает сайт на облачный сервер Timeweb при каждом изменении в ветке main.
 #
-# Перед первым запуском добавьте в репозиторий четыре секрета:
+# Сервер настраивается один раз скриптом deploy/setup-server.sh — он же
+# печатает значения для секретов, которые нужно добавить в репозиторий:
 #   Settings → Secrets and variables → Actions → New repository secret
 #
-#   FTP_HOST      — адрес FTP-сервера из панели Timeweb, например ftp.example.ru
-#   FTP_USER      — логин FTP
-#   FTP_PASSWORD  — пароль FTP
-#   FTP_DIR       — каталог сайта на сервере, обычно /public_html
+#   SSH_HOST — IP сервера, например 5.42.122.203
+#   SSH_USER — deploy
+#   SSH_KEY  — приватный ключ целиком, вместе со строками BEGIN и END
+#   SSH_PATH — /var/www/okna
 #
 # Запустить выкладку вручную можно во вкладке Actions кнопкой «Run workflow».
 
-name: Выкладка на Timeweb
+name: Выкладка на сервер
 
 on:
   push:
@@ -19,7 +20,7 @@ on:
 
 jobs:
   deploy:
-    name: Загрузить файлы на сервер
+    name: Загрузить сайт на сервер
     runs-on: ubuntu-latest
 
     steps:
@@ -29,53 +30,64 @@ jobs:
       - name: Собрать то, что уходит на сервер
         run: |
           mkdir -p dist
-          cp index.html styles.css script.js privacy.html favicon.svg send.php dist/
+          cp index.html styles.css script.js privacy.html 404.html favicon.svg dist/
+          cp send.php config.sample.php dist/
+          for f in robots.txt sitemap.xml; do
+            [ -f "$f" ] && cp "$f" dist/
+          done
+          # config.php с паролем живёт только на сервере и никогда не перезаписывается:
+          # rsync запускается без --delete, поэтому файл на сервере останется нетронутым
           echo "На сервер уйдут файлы:"
           ls -1 dist
 
-      - name: Установить lftp
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends lftp
-
       - name: Проверить, что секреты заполнены
         env:
-          FTP_HOST: ${{ secrets.FTP_HOST }}
-          FTP_USER: ${{ secrets.FTP_USER }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
         run: |
           missing=""
-          [ -z "$FTP_HOST" ] && missing="$missing FTP_HOST"
-          [ -z "$FTP_USER" ] && missing="$missing FTP_USER"
-          [ -z "$FTP_PASSWORD" ] && missing="$missing FTP_PASSWORD"
+          [ -z "$SSH_HOST" ] && missing="$missing SSH_HOST"
+          [ -z "$SSH_USER" ] && missing="$missing SSH_USER"
+          [ -z "$SSH_KEY" ]  && missing="$missing SSH_KEY"
           if [ -n "$missing" ]; then
             echo "Не заданы секреты:$missing"
-            echo "Добавьте их в Settings → Secrets and variables → Actions."
+            echo "Их печатает скрипт deploy/setup-server.sh при настройке сервера."
+            echo "Добавьте в Settings → Secrets and variables → Actions."
             exit 1
           fi
 
-      - name: Выложить по FTP
+      - name: Подготовить ключ доступа
         env:
-          FTP_HOST: ${{ secrets.FTP_HOST }}
-          FTP_USER: ${{ secrets.FTP_USER }}
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          # Если секрет не задан, кладём в /public_html — стандартный каталог Timeweb
-          FTP_DIR: ${{ secrets.FTP_DIR || '/public_html' }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
         run: |
-          # ssl:verify-certificate no — у хостингов часто самоподписанный сертификат.
-          # Соединение при этом всё равно шифруется, если сервер умеет FTPS.
-          #
-          # Ключ --delete намеренно не используется: в каталоге сайта могут лежать
-          # чужие файлы, и стирать их автоматически опасно. Если нужна полная
-          # синхронизация — допишите --delete в строку mirror ниже.
-          lftp -c "
-            set ssl:verify-certificate no;
-            set net:max-retries 3;
-            set net:timeout 20;
-            open -u '$FTP_USER','$FTP_PASSWORD' '$FTP_HOST';
-            mirror --reverse --verbose --parallel=2 dist/ '$FTP_DIR';
-            bye;
-          "
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Запоминаем отпечаток сервера, чтобы подключение не спрашивало подтверждения
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Готово
-        run: echo "Файлы загружены в ${{ secrets.FTP_DIR || '/public_html' }}"
+      - name: Скопировать файлы
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PATH: ${{ secrets.SSH_PATH || '/var/www/okna' }}
+        run: |
+          # --delete намеренно не используется: в каталоге сайта может лежать
+          # что-то ещё, и стирать это автоматически опасно.
+          rsync -avz --no-perms --no-owner --no-group \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new" \
+            dist/ "$SSH_USER@$SSH_HOST:$SSH_PATH/"
+
+      - name: Проверить, что сайт отвечает
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "http://$SSH_HOST/" || echo 000)"
+          echo "Сервер ответил кодом $code"
+          if [ "$code" = "200" ]; then
+            echo "Сайт выложен и отвечает."
+          else
+            echo "Файлы скопированы, но сервер ответил $code — проверьте nginx на сервере."
+          fi

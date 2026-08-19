@@ -1,0 +1,79 @@
+# Настройки веб-сервера для хостинга Timeweb.
+# Файл читается Apache автоматически, ничего запускать не нужно.
+
+# ------------------------------------------------------------------
+# Переход на https и на адрес без www
+# ------------------------------------------------------------------
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Всегда https
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+    # Адрес без www считаем основным.
+    # Если хотите наоборот — с www, замените это правило на обратное.
+    RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
+    RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]
+</IfModule>
+
+# ------------------------------------------------------------------
+# Страница ошибки
+# ------------------------------------------------------------------
+ErrorDocument 404 /404.html
+
+# ------------------------------------------------------------------
+# Кодировка
+# ------------------------------------------------------------------
+AddDefaultCharset UTF-8
+
+<IfModule mod_mime.c>
+    AddCharset UTF-8 .html .css .js .json .xml .svg
+    AddType image/svg+xml .svg
+</IfModule>
+
+# ------------------------------------------------------------------
+# Сжатие: страница отдаётся заметно быстрее
+# ------------------------------------------------------------------
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml
+    AddOutputFilterByType DEFLATE application/javascript application/json
+    AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+# ------------------------------------------------------------------
+# Кэширование
+# Стили и скрипты держим неделю, страницы не кэшируем —
+# иначе после правок посетитель увидит старую версию.
+# ------------------------------------------------------------------
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css "access plus 7 days"
+    ExpiresByType application/javascript "access plus 7 days"
+    ExpiresByType image/svg+xml "access plus 30 days"
+    ExpiresByType image/jpeg "access plus 30 days"
+    ExpiresByType image/png "access plus 30 days"
+    ExpiresByType image/webp "access plus 30 days"
+    ExpiresByType text/html "access plus 0 seconds"
+</IfModule>
+
+# ------------------------------------------------------------------
+# Безопасность
+# ------------------------------------------------------------------
+<IfModule mod_headers.c>
+    # Браузер не должен угадывать тип файла
+    Header set X-Content-Type-Options "nosniff"
+    # Запрет встраивать сайт в чужие фреймы
+    Header set X-Frame-Options "SAMEORIGIN"
+    # Не передавать полный адрес страницы на сторонние сайты
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Не показывать содержимое каталогов
+Options -Indexes
+
+# Закрыть служебные файлы, если вдруг попадут на сервер
+<FilesMatch "^(\.htaccess|\.git.*|.*\.md|.*\.yml)$">
+    Require all denied
+</FilesMatch>
