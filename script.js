@@ -18,6 +18,10 @@
 
     COMPANY: "Окна Профигрупп",
 
+    // Метка источника заявки. Нужна, чтобы в мессенджере и почте было видно,
+    // с какого сайта пришло обращение. На основном сайте ставится своя.
+    SOURCE_LABEL: "Квиз форма",
+
     // Первый номер — основной: он подставляется в шапку и кнопки «Позвонить».
     // В подвал выводится весь список.
     PHONES: [
@@ -800,7 +804,7 @@
 
   function buildLeadText(lead) {
     var lines = [];
-    lines.push("Заявка с сайта — подбор окон");
+    lines.push(SETTINGS.SOURCE_LABEL + " — заявка на замер");
     lines.push("");
     lines.push("Имя: " + lead.name);
     lines.push("Телефон: " + lead.phone);
@@ -853,6 +857,7 @@
       way: lead.way,
       answers: lead.answers,
       solution: lead.solution.specs.map(function (s) { return s.label + ": " + s.value; }),
+      source_label: SETTINGS.SOURCE_LABEL,
       source: collectSource(),
       page: window.location.href,
       text: text

@@ -19,9 +19,11 @@ declare(strict_types=1);
 const THROTTLE_SECONDS = 20;
 
 $config = [
-    'recipient' => 'potolok-45@yandex.ru',
-    'leads_dir' => __DIR__ . '/../okna-leads',
-    'smtp'      => ['enabled' => false],
+    'recipient'    => 'potolok-45@yandex.ru',
+    'leads_dir'    => __DIR__ . '/../okna-leads',
+    'source_label' => 'Квиз форма',
+    'smtp'         => ['enabled' => false],
+    'max'          => ['enabled' => false],
 ];
 
 if (is_file(__DIR__ . '/config.php')) {
@@ -84,9 +86,16 @@ if (is_file($lock) && (time() - (int)filemtime($lock)) < THROTTLE_SECONDS) {
 
 /* ---------------------------------------------------------------- текст */
 
+// Метка источника: с какого сайта пришла заявка.
+// Приходит от формы, иначе берётся из настроек сервера.
+$label = clean((string)($data['source_label'] ?? ''), 60);
+if ($label === '') {
+    $label = (string)$config['source_label'];
+}
+
 if ($text === '') {
     $lines = [
-        'Заявка с сайта — подбор окон',
+        $label . ' — заявка на замер',
         '',
         'Имя: ' . $name,
         'Телефон: ' . $phone,
@@ -215,7 +224,7 @@ function smtp_send(array $s, string $to, string $subject, string $body): bool
 
 $mailed = false;
 $smtp = is_array($config['smtp'] ?? null) ? $config['smtp'] : [];
-$subject = '=?UTF-8?B?' . base64_encode('Заявка на замер — ' . $name . ', ' . $phone) . '?=';
+$subject = '=?UTF-8?B?' . base64_encode($label . ': ' . $name . ', ' . $phone) . '?=';
 
 if (!empty($smtp['enabled'])) {
     $mailed = smtp_send($smtp, (string)$config['recipient'], $subject, $text);
@@ -229,13 +238,81 @@ if (!empty($smtp['enabled'])) {
     $mailed = @mail((string)$config['recipient'], $subject, $text, $headers);
 }
 
+/* --------------------------------------------------- мессенджер MAX */
+
+/**
+ * Отправка заявки боту в MAX.
+ *
+ * Адрес и способ передачи токена вынесены в настройки: документация MAX
+ * ещё меняется, и если формат окажется другим, поправить можно одной
+ * строкой в config.php, не трогая код.
+ */
+function max_send(array $m, string $body): bool
+{
+    $base  = rtrim((string)($m['base_url'] ?? 'https://platform-api.max.ru'), '/');
+    $token = (string)($m['token'] ?? '');
+    $chat  = (string)($m['chat_id'] ?? '');
+
+    if ($token === '' || $chat === '') {
+        error_log('Заявка: для MAX не задан токен или chat_id');
+        return false;
+    }
+
+    $url = $base . '/messages';
+    $headers = ['Content-Type: application/json'];
+
+    // Токен передаётся либо заголовком, либо параметром в адресе
+    if (($m['auth'] ?? 'header') === 'query') {
+        $url .= '?access_token=' . rawurlencode($token);
+    } else {
+        $headers[] = 'Authorization: Bearer ' . $token;
+    }
+
+    // Получатель: числовой chat_id либо user_id — зависит от того, что выдал бот
+    $key = ($m['recipient_field'] ?? 'chat_id');
+    $payload = json_encode([
+        $key   => ctype_digit($chat) ? (int)$chat : $chat,
+        'text' => $body,
+    ], JSON_UNESCAPED_UNICODE);
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => $headers,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+
+    $answer = curl_exec($ch);
+    $code   = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err    = curl_error($ch);
+    curl_close($ch);
+
+    if ($code >= 200 && $code < 300) {
+        return true;
+    }
+
+    // Ответ пишем в журнал ошибок целиком: по нему сразу видно,
+    // что именно не понравилось — токен, адрес или имя поля.
+    error_log('Заявка: MAX ответил ' . $code . ' ' . $err . ' ' . substr((string)$answer, 0, 300));
+    return false;
+}
+
+$maxed = false;
+$max = is_array($config['max'] ?? null) ? $config['max'] : [];
+
+if (!empty($max['enabled']) && function_exists('curl_init')) {
+    $maxed = max_send($max, $text);
+}
+
 /* ------------------------------------------------------------- ответ */
 
-// Заявка принята, если она хотя бы записана в журнал: письмо можно
-// отправить позже, а вот потерять обращение клиента нельзя.
-if ($saved || $mailed) {
+// Заявка принята, если она хотя бы записана в журнал: письмо и сообщение
+// можно отправить позже, а вот потерять обращение клиента нельзя.
+if ($saved || $mailed || $maxed) {
     respond(true);
 }
 
-error_log('Заявка: не удалось ни записать в журнал, ни отправить письмо');
+error_log('Заявка: не удалось ни записать в журнал, ни отправить письмо, ни доставить в MAX');
 respond(false, 'Не получилось сохранить заявку', 500);
