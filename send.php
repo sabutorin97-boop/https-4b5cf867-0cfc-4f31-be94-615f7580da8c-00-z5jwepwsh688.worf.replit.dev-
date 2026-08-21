@@ -26,10 +26,19 @@ $config = [
     'max'          => ['enabled' => false],
 ];
 
-if (is_file(__DIR__ . '/config.php')) {
-    $loaded = require __DIR__ . '/config.php';
-    if (is_array($loaded)) {
-        $config = array_replace_recursive($config, $loaded);
+/* Настройки читаем осторожно: если файл есть, но недоступен, обычный
+   require убивает весь скрипт — и заявка теряется, хотя записать её
+   в журнал ничто не мешает. Поэтому проверяем доступ заранее. */
+$configFile = __DIR__ . '/config.php';
+if (is_file($configFile)) {
+    if (is_readable($configFile)) {
+        $loaded = require $configFile;
+        if (is_array($loaded)) {
+            $config = array_replace_recursive($config, $loaded);
+        }
+    } else {
+        error_log('Заявка: config.php не читается — работаю на настройках по умолчанию. '
+            . 'Поправить: chgrp www-data ' . $configFile . ' && chmod 640 ' . $configFile);
     }
 }
 
