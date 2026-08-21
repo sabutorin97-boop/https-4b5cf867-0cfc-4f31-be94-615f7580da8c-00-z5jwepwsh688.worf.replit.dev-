@@ -25,6 +25,80 @@ if (PHP_SAPI !== 'cli') {
 
 $target = __DIR__ . '/config.php';
 
+/**
+ * Режим проверки: показывает, что записано в настройках, и пробует
+ * достучаться до MAX. Секреты не печатаются целиком — только длина
+ * и края, чтобы можно было сверить с кабинетом, не раскрывая токен.
+ *
+ *     php setup-config.php --check
+ */
+if (in_array($argv[1] ?? '', ['--check', '-c', 'check'], true)) {
+    if (!is_file($target)) {
+        echo "Файла настроек нет: $target\n";
+        echo "Запустите помощник без параметров, он его создаст.\n";
+        exit(1);
+    }
+
+    $c = require $target;
+    $max = is_array($c['max'] ?? null) ? $c['max'] : [];
+    $smtp = is_array($c['smtp'] ?? null) ? $c['smtp'] : [];
+    $token = (string)($max['token'] ?? '');
+
+    /** Показывает секрет так, чтобы его можно было опознать, но не прочитать. */
+    $peek = static function (string $s): string {
+        $len = strlen($s);
+        if ($len === 0) {
+            return 'пусто';
+        }
+        if ($len <= 8) {
+            return "длина $len — подозрительно коротко";
+        }
+        return "длина $len, начало «" . substr($s, 0, 4)
+            . "», конец «" . substr($s, -4) . '»';
+    };
+
+    echo "\nЧто записано в настройках\n-------------------------\n\n";
+    echo '  почта для заявок: ' . ($c['recipient'] ?? '—') . "\n";
+    echo '  метка источника:  ' . ($c['source_label'] ?? '—') . "\n";
+    echo '  письма:           ' . (!empty($smtp['enabled']) ? 'включены' : 'выключены') . "\n";
+    echo '  пароль почты:     ' . $peek((string)($smtp['password'] ?? '')) . "\n";
+    echo '  MAX:              ' . (!empty($max['enabled']) ? 'включён' : 'выключен') . "\n";
+    echo '  токен бота:       ' . $peek($token) . "\n";
+    echo '  чаты:             ' . ((string)($max['chat_id'] ?? '') ?: '—') . "\n\n";
+
+    if ($token === '') {
+        echo "Токен пуст — заявки в MAX уходить не будут.\n";
+        exit(1);
+    }
+
+    echo "Спрашиваю у MAX, кто владелец этого токена...\n";
+    $ch = curl_init('https://platform-api.max.ru/me');
+    curl_setopt_array($ch, [
+        CURLOPT_HTTPHEADER     => ['Authorization: ' . $token],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+    ]);
+    $answer = (string)curl_exec($ch);
+    $code   = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+
+    if ($code >= 200 && $code < 300) {
+        $me = json_decode($answer, true);
+        echo "  ответ: HTTP $code — токен рабочий\n";
+        if (is_array($me)) {
+            echo '  бот:   ' . ($me['name'] ?? '—') . ' (' . ($me['username'] ?? '—') . ")\n";
+        }
+    } else {
+        echo "  ответ: HTTP $code — " . substr($answer, 0, 200) . "\n\n";
+        echo "Токен не принят. Скорее всего он изменился в кабинете\n";
+        echo "business.max.ru — скопируйте оттуда свежий и запустите\n";
+        echo "помощник без параметров, чтобы записать его заново.\n";
+    }
+
+    echo "\n";
+    exit(0);
+}
+
 /** Задаёт вопрос и возвращает ответ. Пустой ответ означает «оставить как есть». */
 function ask(string $question, string $default = ''): string
 {
