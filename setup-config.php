@@ -50,11 +50,19 @@ if (in_array($argv[1] ?? '', ['--check', '-c', 'check'], true)) {
         if ($len === 0) {
             return 'пусто';
         }
-        if ($len <= 8) {
-            return "длина $len — подозрительно коротко";
+        // Невидимое показываем точками, иначе «начало» выглядит пустым
+        // и непонятно, что в строку затесался мусор
+        $show = static fn(string $part): string => preg_replace('/[^\x21-\x7E]/', '·', $part) ?? $part;
+
+        $note = '';
+        if (preg_match('/[^\x21-\x7E]/', $s)) {
+            $note = ' — есть посторонние знаки, отмечены точками';
         }
-        return "длина $len, начало «" . substr($s, 0, 4)
-            . "», конец «" . substr($s, -4) . '»';
+        if ($len <= 8) {
+            return "длина $len — подозрительно коротко" . $note;
+        }
+        return "длина $len, начало «" . $show(substr($s, 0, 4))
+            . "», конец «" . $show(substr($s, -4)) . '»' . $note;
     };
 
     echo "\nЧто записано в настройках\n-------------------------\n\n";
@@ -99,13 +107,52 @@ if (in_array($argv[1] ?? '', ['--check', '-c', 'check'], true)) {
     exit(0);
 }
 
+/**
+ * Убирает метки вставки, которые терминал дописывает вокруг текста
+ * из буфера обмена: \e[200~ в начале и \e[201~ в конце. Символ ESC
+ * консоль часто съедает, а «[200~» остаётся прямо внутри значения —
+ * и токен молча становится нерабочим.
+ */
+function strip_paste(string $s): string
+{
+    return preg_replace('/\x1B?\[20[01]~/', '', $s) ?? $s;
+}
+
 /** Задаёт вопрос и возвращает ответ. Пустой ответ означает «оставить как есть». */
 function ask(string $question, string $default = ''): string
 {
     $hint = $default !== '' ? " [$default]" : '';
     echo $question . $hint . ': ';
-    $answer = trim((string)fgets(STDIN));
+    $answer = trim(strip_paste((string)fgets(STDIN)));
     return $answer === '' ? $default : $answer;
+}
+
+/**
+ * Спрашивает секрет — токен или пароль.
+ *
+ * Браузерная консоль при вставке иногда добавляет управляющие символы
+ * или теряет начало строки. Здесь всё, кроме обычных печатных знаков,
+ * вырезается, а о находке говорится вслух: иначе токен выглядит целым,
+ * но сервер отвечает «Invalid access_token», и причина неочевидна.
+ */
+function ask_secret(string $question): string
+{
+    echo $question . ': ';
+    $raw = trim(strip_paste((string)fgets(STDIN)));
+    $clean = preg_replace('/[^\x21-\x7E]/', '', $raw) ?? $raw;
+
+    if ($clean !== $raw) {
+        $cut = strlen($raw) - strlen($clean);
+        echo "    убрал посторонние знаки: $cut шт.\n";
+    }
+    if ($clean !== '') {
+        echo '    принято: длина ' . strlen($clean)
+            . ', начало «' . substr($clean, 0, 4)
+            . '», конец «' . substr($clean, -4) . "»\n";
+        echo "    сверьте края с тем, что в кабинете\n";
+    }
+
+    return $clean;
 }
 
 /** Вопрос с ответом «да/нет». */
@@ -157,7 +204,7 @@ $chatIds = '';
 if ($maxOn) {
     echo "\nТокен бота — длинная строка из кабинета business.max.ru.\n";
     echo "Вставка в консоли: Ctrl+Shift+V или правая кнопка мыши.\n";
-    $token = ask('Токен бота');
+    $token = ask_secret('Токен бота');
 
     echo "\nНомера чатов, куда слать заявки. Их показывает max-chat-id.php.\n";
     echo "Если получателей несколько — перечислите через запятую.\n";
@@ -180,7 +227,7 @@ if ($smtpOn) {
     echo "\nДля Яндекса нужен пароль приложения, а не пароль от почты:\n";
     echo "id.yandex.ru → Безопасность → Пароли приложений → Почта.\n";
     $smtpUser = ask('Почтовый ящик (логин)', $recipient);
-    $smtpPass = ask('Пароль приложения');
+    $smtpPass = ask_secret('Пароль приложения');
 
     if ($smtpPass === '') {
         echo "\nПароль не задан — отправку писем пока отключаю.\n";
