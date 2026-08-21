@@ -18,6 +18,11 @@ declare(strict_types=1);
 
 const THROTTLE_SECONDS = 20;
 
+/* Время в заявке — курганское. Сервер живёт по UTC, и без этой строки
+   в заявке стояло бы время на пять часов раньше: менеджер видел бы
+   «09:24» вместо «14:24» и не понимал, свежее обращение или вчерашнее. */
+date_default_timezone_set('Asia/Yekaterinburg');
+
 $config = [
     'recipient'    => 'potolok-45@yandex.ru',
     'leads_dir'    => __DIR__ . '/../okna-leads',
@@ -146,7 +151,14 @@ if ($text === '') {
 
 $text = str_replace("\0", '', $text);
 $text .= "\n\nСтраница: " . clean((string)($data['page'] ?? ''), 300);
-$text .= "\nИсточник: " . clean((string)($data['source'] ?? '—'), 300);
+
+// Источник показываем, только если он есть: пустая строка «Источник:»
+// в заявке лишь занимает место и сбивает с толку
+$source = clean((string)($data['source'] ?? ''), 300);
+if ($source !== '') {
+    $text .= "\nИсточник: " . $source;
+}
+
 $text .= "\nIP: " . $ip;
 $text .= "\nВремя: " . date('d.m.Y H:i');
 
