@@ -42,6 +42,30 @@ function respond(bool $ok, string $error = '', int $code = 200): never
     exit;
 }
 
+/* Модуль mbstring ставится отдельно от PHP, и на голом сервере его может
+   не оказаться. Терять из-за этого заявку клиента нельзя, поэтому здесь
+   запасной вариант: он режет по байтам, зато ничего не роняет. */
+if (!function_exists('mb_substr')) {
+    error_log('Заявка: не установлен php-mbstring, работаю без него');
+
+    function mb_substr(string $s, int $start, ?int $length = null): string
+    {
+        return $length === null ? substr($s, $start) : substr($s, $start, $length);
+    }
+
+    function mb_strlen(string $s): int
+    {
+        // Считаем символы, а не байты: иначе проверка имени пропустит
+        // двухбуквенное русское имя как достаточно длинное
+        return (int)(strlen($s) - substr_count($s, "\xD0") - substr_count($s, "\xD1"));
+    }
+
+    function mb_strtolower(string $s): string
+    {
+        return strtolower($s);
+    }
+}
+
 /** Убирает переводы строк — защита от подстановки лишних почтовых заголовков. */
 function clean(string $value, int $limit = 200): string
 {

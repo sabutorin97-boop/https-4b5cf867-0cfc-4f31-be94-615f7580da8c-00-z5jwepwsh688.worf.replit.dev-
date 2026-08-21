@@ -151,7 +151,12 @@ foreach ($attempts as $how => [$url, $auth, $authMode]) {
             echo "    chat_id = $chat\n";
             echo "        что это:   {$info['kind']}\n";
             echo "        от кого:   {$info['who']}\n";
-            echo "        сообщение: " . mb_substr($info['text'], 0, 60) . "\n";
+            // Без mbstring обрезаем по байтам: скрипт нужен на голом сервере,
+            // где модуль ещё могли не поставить
+            $preview = function_exists('mb_substr')
+                ? mb_substr($info['text'], 0, 60)
+                : substr($info['text'], 0, 120);
+            echo "        сообщение: " . $preview . "\n";
             echo "        когда:     $when\n\n";
         }
         echo "Нужную строку узнаете по имени и тексту сообщения.\n";

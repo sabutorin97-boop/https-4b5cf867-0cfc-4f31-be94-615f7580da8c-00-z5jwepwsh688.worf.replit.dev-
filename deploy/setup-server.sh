@@ -37,10 +37,11 @@ fi
 say "Устанавливаю nginx, PHP и certbot"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-# php-curl обязателен: через него send.php отправляет заявки в MAX,
-# а max-chat-id.php узнаёт номер диалога. Без него оба падают с ошибкой
-# «Call to undefined function curl_init()».
-apt-get install -y -qq nginx php-fpm php-curl certbot python3-certbot-nginx rsync ufw curl
+# Два модуля PHP обязательны, и оба ставятся отдельно от php-fpm:
+#   php-curl     — отправка заявок в MAX (иначе «undefined function curl_init»);
+#   php-mbstring — работа с русскими буквами. Без него падает даже приём
+#                  заявки: send.php обрезает имя и телефон через mb_substr.
+apt-get install -y -qq nginx php-fpm php-curl php-mbstring certbot python3-certbot-nginx rsync ufw curl
 ok "Пакеты установлены"
 
 # Определяем версию PHP — путь к сокету зависит от неё

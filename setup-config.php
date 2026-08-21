@@ -39,11 +39,14 @@ function confirm(string $question, bool $default = true): bool
 {
     $hint = $default ? 'Д/н' : 'д/Н';
     echo $question . " ($hint): ";
-    $answer = mb_strtolower(trim((string)fgets(STDIN)));
+    $answer = trim((string)fgets(STDIN));
     if ($answer === '') {
         return $default;
     }
-    return in_array($answer, ['д', 'да', 'y', 'yes'], true);
+    /* Заглавные буквы перечислены прямо здесь: strtolower не понижает
+       кириллицу, а mb_strtolower требует модуль mbstring, которого
+       на голом сервере может не быть — а помощник нужен именно там. */
+    return in_array($answer, ['д', 'Д', 'да', 'Да', 'ДА', 'y', 'Y', 'yes', 'Yes', 'YES'], true);
 }
 
 echo "\n";
