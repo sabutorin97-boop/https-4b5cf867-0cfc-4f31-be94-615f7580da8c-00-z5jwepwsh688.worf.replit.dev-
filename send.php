@@ -296,12 +296,13 @@ function max_send_one(array $m, string $token, string $chat, string $body): bool
         $headers[] = 'Authorization: ' . $token;
     }
 
-    // Получатель: числовой chat_id либо user_id — зависит от того, что выдал бот
-    $key = ($m['recipient_field'] ?? 'chat_id');
-    $payload = json_encode([
-        $key   => ctype_digit($chat) ? (int)$chat : $chat,
-        'text' => $body,
-    ], JSON_UNESCAPED_UNICODE);
+    /* Получатель передаётся параметром в адресе — так устроен приём сообщений
+       у MAX. Имя параметра зависит от того, что выдал бот: chat_id для чата
+       или user_id для личной переписки. Тело запроса — только текст. */
+    $key = (string)($m['recipient_field'] ?? 'chat_id');
+    $url .= (str_contains($url, '?') ? '&' : '?') . $key . '=' . rawurlencode($chat);
+
+    $payload = json_encode(['text' => $body], JSON_UNESCAPED_UNICODE);
 
     $ch = curl_init($url);
     curl_setopt_array($ch, [

@@ -62,10 +62,15 @@ function ask(string $url, ?string $auth): array
    Bearer, а на токен в адресе — «use Authorization header». Поэтому первым
    идёт голый токен в заголовке, остальные оставлены на случай смены формата.
    Третий элемент — значение auth для config.php, если способ подойдёт. */
+/* timeout=0 обязателен: без него /updates работает как ожидание новых
+   событий и висит до обрыва связи, если писем боту не было. С нулём
+   MAX отвечает сразу тем, что накопилось. */
+$updates = $base . '/updates?timeout=0&limit=100';
+
 $attempts = [
-    'токен в заголовке, без приставки' => [$base . '/updates', $token, 'header'],
-    'токен в заголовке с Bearer'       => [$base . '/updates', 'Bearer ' . $token, 'bearer'],
-    'токен в адресе'                   => [$base . '/updates?access_token=' . rawurlencode($token), null, 'query'],
+    'токен в заголовке, без приставки' => [$updates, $token, 'header'],
+    'токен в заголовке с Bearer'       => [$updates, 'Bearer ' . $token, 'bearer'],
+    'токен в адресе'                   => [$updates . '&access_token=' . rawurlencode($token), null, 'query'],
 ];
 
 foreach ($attempts as $how => [$url, $auth, $authMode]) {
@@ -164,8 +169,9 @@ foreach ($attempts as $how => [$url, $auth, $authMode]) {
         echo "если только user_id — поставьте recipient_field = 'user_id'.\n";
         echo "И укажите auth = '$authMode' — этот способ подошёл.\n";
     } else {
-        echo "Ответ получен, но идентификаторов в нём нет.\n";
-        echo "Напишите боту сообщение в MAX и запустите скрипт ещё раз.\n";
+        echo "Ответ получен, но сообщений в нём нет — очередь пуста.\n";
+        echo "MAX отдаёт каждое сообщение только один раз, поэтому попросите\n";
+        echo "нужного человека написать боту ещё раз и запустите скрипт снова.\n";
         echo 'Ответ целиком: ' . substr($body, 0, 500) . "\n";
     }
     exit(0);
