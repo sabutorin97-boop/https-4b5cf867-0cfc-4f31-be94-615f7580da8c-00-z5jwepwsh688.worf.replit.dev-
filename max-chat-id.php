@@ -105,14 +105,18 @@ foreach ($attempts as $how => [$url, $auth, $authMode]) {
         }
         $chat = (string)$chat;
         if (!isset($chats[$chat])) {
-            $chats[$chat] = ['who' => '—', 'text' => '', 'when' => 0];
+            $chats[$chat] = ['who' => '—', 'text' => '', 'when' => 0, 'kind' => ''];
         }
         $stamp = (int)($update['timestamp'] ?? 0);
         if ($stamp >= $chats[$chat]['when']) {
+            // dialog — личная переписка, chat — группа. Для рассылки заявок
+            // нужна именно группа: она одна, а получателей в ней сколько угодно.
+            $type = (string)($message['recipient']['chat_type'] ?? '');
             $chats[$chat] = [
                 'who'  => (string)($message['sender']['name'] ?? '—'),
                 'text' => (string)($message['body']['text'] ?? ''),
                 'when' => $stamp,
+                'kind' => $type === 'dialog' ? 'личная переписка' : ($type === '' ? '—' : 'группа'),
             ];
         }
     }
@@ -140,12 +144,16 @@ foreach ($attempts as $how => [$url, $auth, $authMode]) {
             // Время MAX отдаёт в миллисекундах
             $when = $info['when'] > 0 ? date('d.m.Y H:i', (int)($info['when'] / 1000)) : '—';
             echo "    chat_id = $chat\n";
-            echo "        от кого:  {$info['who']}\n";
+            echo "        что это:   {$info['kind']}\n";
+            echo "        от кого:   {$info['who']}\n";
             echo "        сообщение: " . mb_substr($info['text'], 0, 60) . "\n";
-            echo "        когда:    $when\n\n";
+            echo "        когда:     $when\n\n";
         }
-        echo "Найдите строку со своим именем и своим сообщением — это ваш chat_id.\n";
-        echo "Впишите его в config.php, раздел 'max', вместе с auth = '$authMode'.\n";
+        echo "Нужную строку узнаете по имени и тексту сообщения.\n";
+        echo "Впишите её chat_id в config.php, раздел 'max', вместе с auth = '$authMode'.\n\n";
+        echo "Если заявки должны видеть несколько человек — заведите в MAX группу,\n";
+        echo "добавьте туда бота, напишите в ней что угодно и запустите скрипт снова:\n";
+        echo "в списке появится строка с пометкой «группа», её chat_id и нужен.\n";
     } elseif ($found) {
         echo "Найдено:\n";
         foreach (array_keys($found) as $line) {

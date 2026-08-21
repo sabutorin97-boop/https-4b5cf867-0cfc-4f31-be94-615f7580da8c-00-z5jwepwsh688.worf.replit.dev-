@@ -249,16 +249,37 @@ if (!empty($smtp['enabled'])) {
  */
 function max_send(array $m, string $body): bool
 {
-    $base  = rtrim((string)($m['base_url'] ?? 'https://platform-api.max.ru'), '/');
     $token = (string)($m['token'] ?? '');
-    $chat  = (string)($m['chat_id'] ?? '');
+    $chats = $m['chat_id'] ?? '';
 
-    if ($token === '' || $chat === '') {
+    /* chat_id можно задать списком: одна группа предпочтительнее, но если
+       бота в группу добавить не вышло, заявка уйдёт каждому по отдельности.
+       Принимаем и массив, и строку с номерами через запятую. */
+    if (!is_array($chats)) {
+        $chats = explode(',', (string)$chats);
+    }
+    $chats = array_values(array_filter(array_map('trim', array_map('strval', $chats)), static fn($c) => $c !== ''));
+
+    if ($token === '' || !$chats) {
         error_log('Заявка: для MAX не задан токен или chat_id');
         return false;
     }
 
-    $url = $base . '/messages';
+    // Успехом считаем доставку хотя бы одному получателю
+    $delivered = false;
+    foreach ($chats as $chat) {
+        if (max_send_one($m, $token, $chat, $body)) {
+            $delivered = true;
+        }
+    }
+    return $delivered;
+}
+
+/** Отправка одного сообщения в один чат. */
+function max_send_one(array $m, string $token, string $chat, string $body): bool
+{
+    $base = rtrim((string)($m['base_url'] ?? 'https://platform-api.max.ru'), '/');
+    $url  = $base . '/messages';
     $headers = ['Content-Type: application/json'];
 
     /* Способ авторизации:
@@ -302,7 +323,7 @@ function max_send(array $m, string $body): bool
 
     // Ответ пишем в журнал ошибок целиком: по нему сразу видно,
     // что именно не понравилось — токен, адрес или имя поля.
-    error_log('Заявка: MAX ответил ' . $code . ' ' . $err . ' ' . substr((string)$answer, 0, 300));
+    error_log('Заявка: MAX (чат ' . $chat . ') ответил ' . $code . ' ' . $err . ' ' . substr((string)$answer, 0, 300));
     return false;
 }
 
