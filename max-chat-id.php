@@ -33,13 +33,18 @@ if ($token === '') {
     exit(1);
 }
 
-/** Пробуем оба способа передачи токена: заголовком и параметром в адресе. */
-function ask(string $url, ?string $bearer): array
+/**
+ * Пробуем разные способы передачи токена.
+ *
+ * $auth — что положить в заголовок Authorization, либо null,
+ * если токен уже вписан в адрес.
+ */
+function ask(string $url, ?string $auth): array
 {
     $ch = curl_init($url);
     $headers = ['Accept: application/json'];
-    if ($bearer !== null) {
-        $headers[] = 'Authorization: Bearer ' . $bearer;
+    if ($auth !== null) {
+        $headers[] = 'Authorization: ' . $auth;
     }
     curl_setopt_array($ch, [
         CURLOPT_HTTPHEADER     => $headers,
@@ -53,14 +58,19 @@ function ask(string $url, ?string $bearer): array
     return [$code, $body, $err];
 }
 
+/* Порядок не случаен: MAX отвечает «Malformed access token» на приставку
+   Bearer, а на токен в адресе — «use Authorization header». Поэтому первым
+   идёт голый токен в заголовке, остальные оставлены на случай смены формата.
+   Третий элемент — значение auth для config.php, если способ подойдёт. */
 $attempts = [
-    'токен в заголовке' => [$base . '/updates', $token],
-    'токен в адресе'    => [$base . '/updates?access_token=' . rawurlencode($token), null],
+    'токен в заголовке, без приставки' => [$base . '/updates', $token, 'header'],
+    'токен в заголовке с Bearer'       => [$base . '/updates', 'Bearer ' . $token, 'bearer'],
+    'токен в адресе'                   => [$base . '/updates?access_token=' . rawurlencode($token), null, 'query'],
 ];
 
-foreach ($attempts as $how => [$url, $bearer]) {
+foreach ($attempts as $how => [$url, $auth, $authMode]) {
     echo "Пробую: $how\n";
-    [$code, $body, $err] = ask($url, $bearer);
+    [$code, $body, $err] = ask($url, $auth);
 
     if ($err !== '') {
         echo "   не удалось соединиться: $err\n\n";
@@ -105,9 +115,7 @@ foreach ($attempts as $how => [$url, $bearer]) {
         echo "\nВпишите нужное значение в config.php, раздел 'max'.\n";
         echo "Если это chat_id — оставьте recipient_field = 'chat_id',\n";
         echo "если только user_id — поставьте recipient_field = 'user_id'.\n";
-        if ($bearer === null) {
-            echo "И укажите auth = 'query' — этому боту подошёл токен в адресе.\n";
-        }
+        echo "И укажите auth = '$authMode' — этот способ подошёл.\n";
     } else {
         echo "Ответ получен, но идентификаторов в нём нет.\n";
         echo "Напишите боту сообщение в MAX и запустите скрипт ещё раз.\n";

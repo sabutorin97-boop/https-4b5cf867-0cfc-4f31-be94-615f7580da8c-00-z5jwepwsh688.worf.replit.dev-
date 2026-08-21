@@ -261,11 +261,18 @@ function max_send(array $m, string $body): bool
     $url = $base . '/messages';
     $headers = ['Content-Type: application/json'];
 
-    // Токен передаётся либо заголовком, либо параметром в адресе
-    if (($m['auth'] ?? 'header') === 'query') {
+    /* Способ авторизации:
+         header — голый токен в заголовке (так принимает MAX),
+         bearer — с приставкой Bearer,
+         query  — параметром в адресе (MAX считает устаревшим).
+       Какой подошёл — подсказывает max-chat-id.php. */
+    $auth = (string)($m['auth'] ?? 'header');
+    if ($auth === 'query') {
         $url .= '?access_token=' . rawurlencode($token);
-    } else {
+    } elseif ($auth === 'bearer') {
         $headers[] = 'Authorization: Bearer ' . $token;
+    } else {
+        $headers[] = 'Authorization: ' . $token;
     }
 
     // Получатель: числовой chat_id либо user_id — зависит от того, что выдал бот

@@ -69,7 +69,9 @@ return [
         'token'           => 'сюда-токен-бота',
         'chat_id'         => 'сюда-chat_id',
         'base_url'        => 'https://platform-api.max.ru',
-        'auth'            => 'header',   // 'header' или 'query'
+        // 'header' — голый токен, 'bearer' — с приставкой Bearer,
+        // 'query' — параметром в адресе. Нужный подскажет max-chat-id.php.
+        'auth'            => 'header',
         'recipient_field' => 'chat_id',  // 'chat_id' или 'user_id'
     ],
 ];
