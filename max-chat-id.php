@@ -90,7 +90,34 @@ foreach ($attempts as $how => [$url, $auth, $authMode]) {
         continue;
     }
 
-    // Ищем в ответе все числовые идентификаторы чатов и пользователей
+    /* Разбираем сообщения по одному. Боту могли писать разные люди,
+       и просто список номеров не подсказывает, какой из них ваш —
+       поэтому рядом с номером показываем, кто написал и что именно. */
+    $chats = [];
+    foreach (($data['updates'] ?? []) as $update) {
+        if (!is_array($update)) {
+            continue;
+        }
+        $message = $update['message'] ?? [];
+        $chat = $message['recipient']['chat_id'] ?? null;
+        if ($chat === null) {
+            continue;
+        }
+        $chat = (string)$chat;
+        if (!isset($chats[$chat])) {
+            $chats[$chat] = ['who' => '—', 'text' => '', 'when' => 0];
+        }
+        $stamp = (int)($update['timestamp'] ?? 0);
+        if ($stamp >= $chats[$chat]['when']) {
+            $chats[$chat] = [
+                'who'  => (string)($message['sender']['name'] ?? '—'),
+                'text' => (string)($message['body']['text'] ?? ''),
+                'when' => $stamp,
+            ];
+        }
+    }
+
+    // Запасной путь: если формат ответа окажется другим, покажем хотя бы номера
     $found = [];
     $walk = function ($node) use (&$walk, &$found) {
         if (!is_array($node)) {
@@ -107,7 +134,19 @@ foreach ($attempts as $how => [$url, $auth, $authMode]) {
     $walk($data);
 
     echo "\n";
-    if ($found) {
+    if ($chats) {
+        echo "Диалоги, в которых бот получал сообщения:\n\n";
+        foreach ($chats as $chat => $info) {
+            // Время MAX отдаёт в миллисекундах
+            $when = $info['when'] > 0 ? date('d.m.Y H:i', (int)($info['when'] / 1000)) : '—';
+            echo "    chat_id = $chat\n";
+            echo "        от кого:  {$info['who']}\n";
+            echo "        сообщение: " . mb_substr($info['text'], 0, 60) . "\n";
+            echo "        когда:    $when\n\n";
+        }
+        echo "Найдите строку со своим именем и своим сообщением — это ваш chat_id.\n";
+        echo "Впишите его в config.php, раздел 'max', вместе с auth = '$authMode'.\n";
+    } elseif ($found) {
         echo "Найдено:\n";
         foreach (array_keys($found) as $line) {
             echo "    $line\n";
